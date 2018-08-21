@@ -29,7 +29,7 @@ class Builder(object):
 
     @staticmethod
     def random_start_block():
-        return (bl.START_LINE_BLOCK, random.randrange(10, 22), random.randrange(11, 23), random.randrange(10, 22), random.randrange(0, 4))
+        return (bl.START_LINE_BLOCK, random.randrange(10, 22), random.randrange(1, 11), random.randrange(10, 22), random.randrange(0, 4))
 
     @staticmethod
     def sample(preds, temperature=1.0):
@@ -259,7 +259,7 @@ class Builder(object):
             self.track.extend(seed)
             self.encode_seed(seed[:], X_block, X_position)
         else:
-            self.track.append((14, 30, 2, 3, 0))
+            self.track.append(self.random_start_block())
             X_block[0][-1] = bl.one_hot_bid(self.track[-1][BID])
             X_position[0][-1] = self.block_to_vec(self.inp_len, self.track[-1], self.scaler, True)
 
@@ -297,4 +297,4 @@ class Builder(object):
             self.track = self.decoded_track(start_pos=(sx, sy, sz))
             self.lower_track()
         pickle.dump(self.track, open('generated-track.bin', 'w+'))
-        return self.track, X_position
+        return self.track
