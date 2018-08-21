@@ -32,7 +32,6 @@ def on_button_press(w, event):
     x = int(event.x / IMG_SIZE)
     z = int(event.y / IMG_SIZE)
 
-    pix = GdkPixbuf.Pixbuf.new_from_file_at_size('blocks-images/empty.jpg', IMG_SIZE, IMG_SIZE)
     images[x][z].set_opacity(0.3)
     
 def on_accept(button):
