@@ -146,13 +146,13 @@ gen = track_sequence_generator(batch_size)
 
 if args.model_filename:
     model = load_model(args.model_filename)
-    model.summary()
-    b = Builder(block_model, model, None, lookback, train_data, True)
 else:
     model = build_model()
-    model.summary()
 
-    if args.usegen:
-        history = model.fit_generator(gen, steps_per_epoch=dataset_len / batch_size, epochs=200)
-    else:
-        history = model.fit(X, [y_pos_x, y_pos_y, y_pos_z, y_rot], batch_size=batch_size, epochs=200, verbose=1)
+b = Builder(block_model, model, None, lookback, train_data, True)
+
+model.summary()
+if args.usegen:
+    history = model.fit_generator(gen, steps_per_epoch=dataset_len / batch_size, epochs=200)
+else:
+    history = model.fit(X, [y_pos_x, y_pos_y, y_pos_z, y_rot], batch_size=batch_size, epochs=200, verbose=1)

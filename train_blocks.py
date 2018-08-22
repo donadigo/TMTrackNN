@@ -112,12 +112,11 @@ gen = track_sequence_generator(batch_size)
 
 if args.model_filename:
     model = load_model(args.model_filename)
-    model.summary()
 else:
     model = build_model()
-    model.summary()
 
-    if args.usegen:
-        history = model.fit_generator(gen, steps_per_epoch=dataset_len / batch_size, epochs=200)
-    else:
-        history = model.fit(X, y, batch_size=128, epochs=100, verbose=1, shuffle=True)
+model.summary()
+if args.usegen:
+    history = model.fit_generator(gen, steps_per_epoch=dataset_len / batch_size, epochs=200)
+else:
+    history = model.fit(X, y, batch_size=128, epochs=100, verbose=1, shuffle=True)
