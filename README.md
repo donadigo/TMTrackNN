@@ -7,7 +7,7 @@ This is a hobby project for fun to learn Python and also to learn how neural net
 The aim is to generate new maps, tracks using NN's for a racing game called [TrackMania](https://www.trackmania.com/). I created this project a while ago for fun and mostly for educational purposes.
 
 ## Dependencies
-* Python 2.7
+* Python 3
 * Keras
 * python-lzo (through pip)
 * numpy

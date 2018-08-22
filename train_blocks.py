@@ -32,7 +32,7 @@ if not args.usegen and not args.track_num:
 batch_size = NET_CONFIG['batch_size']
 lookback = NET_CONFIG['lookback']
 
-train_data_file = open(NET_CONFIG['train_fname'], 'r')
+train_data_file = open(NET_CONFIG['train_fname'], 'rb')
 train_data = pickle.load(train_data_file)
 if args.track_num:
     train_data = train_data[:args.track_num]

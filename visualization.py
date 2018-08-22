@@ -24,9 +24,9 @@ rot_images = []
 
 print('Loading training data...')
 if not load_fname:
-    data = pickle.load(open('train-data.bin', 'r'))
+    data = pickle.load(open('train-data.bin', 'rb'))
 else:
-    data = [('', pickle.load(open(load_fname, 'r')))]
+    data = [('', pickle.load(open(load_fname, 'rb')))]
 
 def on_button_press(w, event):
     x = int(event.x / IMG_SIZE)

@@ -678,7 +678,7 @@ def pad_block_sequence(seq, maxlen):
     return pad + seq
 
 def get_block_name(bid):
-	for name, _bid in BLOCKS.iteritems():
+	for name, _bid in BLOCKS.items():
 		if _bid == bid:
 			return name
 	return None
@@ -697,7 +697,7 @@ def is_multilap(name):
 
 BID, BX, BY, BZ, BROT = range(5)
 EMPTY_BLOCK = (0, 0, 0, 0, 0)
-BASE_BLOCKS = range(6, 186+1) + range(196, 233+1)
+BASE_BLOCKS = list(range(6, 186+1)) + list(range(196, 233+1))
 START_LINE_BLOCK = BLOCKS['StadiumRoadMainStartLine']
 FINISH_LINE_BLOCK = BLOCKS['StadiumRoadMainFinishLine']
 MULTILAP_LINE_BLOCK = BLOCKS['StadiumRoadMainStartFinishLine']

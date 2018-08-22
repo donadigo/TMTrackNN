@@ -206,6 +206,6 @@ for fname in listdir(traindir):
 
 print('Saving training data, length: {}'.format(len(train_data)))
 chdir(rootdir)
-train_file = open(sys.argv[2], 'w+')
+train_file = open(sys.argv[2], 'wb+')
 pickle.dump(train_data, train_file)
 train_file.close()

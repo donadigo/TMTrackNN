@@ -1,10 +1,11 @@
 import struct
 import logging
+from io import IOBase
 
 class ByteReader(object):
     def __init__(self, obj):
         self.data = obj
-        if type(obj) == file:
+        if isinstance(obj, IOBase):
             self.get_bytes = self.get_bytes_file
         else:
             self.get_bytes = self.get_bytes_generic
@@ -38,7 +39,7 @@ class ByteReader(object):
 
     def read_string(self):
         strlen = self.read_uint32()
-        return self.read(strlen, str(strlen) + 's')
+        return self.read(strlen, str(strlen) + 's').decode('utf-8')
 
     def read_byte(self):
         val = self.get_bytes(1)[0]

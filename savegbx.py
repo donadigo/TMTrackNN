@@ -32,7 +32,7 @@ if len(sys.argv) < 3:
 
 stored_strings = []
 seen_lookback = True
-track = pickle.load(open(sys.argv[1], 'r'))
+track = pickle.load(open(sys.argv[1], 'rb'))
 
 saved_fname = sys.argv[2]
 
@@ -44,9 +44,9 @@ def str_replace(s, rep, offset, rlen=-1):
 
 def write_lookback_string(s):
     global seen_lookback
-    lbs = ''
+    lbs = bytearray()
     if not seen_lookback:
-        ver = struct.pack('I', CURRENT_VER)
+        ver = str(struct.pack('I', CURRENT_VER))
         lbs += ver
         seen_lookback = True
 
@@ -54,7 +54,7 @@ def write_lookback_string(s):
         idx = struct.pack('I', BASE_LBS_IDX)
         lbs += idx
         lbs += struct.pack('I', len(s))
-        lbs += struct.pack(str(len(s)) + 's', s)
+        lbs += struct.pack(str(len(s)) + 's', bytes(s, 'utf-8'))
         stored_strings.append(s)
     else:
         idx = struct.pack('I', BASE_LBS_IDX + stored_strings.index(s))
@@ -63,7 +63,7 @@ def write_lookback_string(s):
     return lbs
 
 def write_block(block):
-    bstr = ''
+    bstr = bytearray()
 
     bname = bl.get_block_name(block[0])
     bstr += write_lookback_string(bname)
@@ -95,12 +95,12 @@ append_to_store(challenge.mood)
 append_to_store(challenge.env_bg)
 append_to_store(challenge.env_author)
 
-udata = temp_gbx.data
+udata = bytes(temp_gbx.data)
 
 temp = open(TEMPLATE_FNAME, 'rb')
 data = temp.read()
 
-blocks_chunk_str = ''
+blocks_chunk_str = bytearray()
 blocks_chunk_str += struct.pack('I', len(track))
 
 for block in track:

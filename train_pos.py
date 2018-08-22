@@ -37,7 +37,7 @@ if not args.usegen and not args.track_num:
 batch_size = NET_CONFIG['batch_size']
 lookback = NET_CONFIG['lookback']
 
-train_data_file = open(NET_CONFIG['train_fname'], 'r')
+train_data_file = open(NET_CONFIG['train_fname'], 'rb')
 train_data = pickle.load(train_data_file)
 if args.track_num:
     train_data = train_data[:args.track_num]
@@ -61,9 +61,9 @@ def block_to_vec(block, encode_pos=True):
 def append_blocks(blocks_in, block_out, X, y_pos_x, y_pos_y, y_pos_z, y_rot):
     end_idx = len(blocks_in) - 1
     X.append([block_to_vec(block, i != end_idx) for i, block in enumerate(blocks_in)])
-    y_pos_x.append(one_hot_pos(block[BX]))
-    y_pos_y.append(one_hot_pos(block[BY], 1))
-    y_pos_z.append(one_hot_pos(block[BZ]))
+    y_pos_x.append(one_hot_pos(block_out[BX]))
+    y_pos_y.append(one_hot_pos(block_out[BY], 1))
+    y_pos_z.append(one_hot_pos(block_out[BZ]))
     y_rot.append(one_hot_rotation(block_out[BROT]))
 
 def process_entry(blocks, X, y_pos_x, y_pos_y, y_pos_z, y_rot):

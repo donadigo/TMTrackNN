@@ -296,5 +296,5 @@ class Builder(object):
 
             self.track = self.decoded_track(start_pos=(sx, sy, sz))
             self.lower_track()
-        pickle.dump(self.track, open('generated-track.bin', 'w+'))
+        pickle.dump(self.track, open('generated-track.bin', 'wb+'))
         return self.track
