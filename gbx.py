@@ -1,4 +1,3 @@
-from __future__ import print_function
 import struct
 import lzo
 import logging
@@ -23,7 +22,7 @@ class GbxType(IntEnum):
     GAME_SKIN = 0x03031000
     GAME_PLAYER_PROFILE = 0x0308C000
     MW_NOD = 0x01001000
-
+    
 class Gbx(object):
     def __init__(self, path):
         self.f = open(path, 'rb')
@@ -35,6 +34,9 @@ class Gbx(object):
         self.valid = self.magic == 'GBX'
         self.version = root_parser.read(2, 'H')
         self.classes = {}
+        self.num_blocks_offset = -1
+        self.block_data_size = -1
+        self.data_size_offset = -1
 
         root_parser.skip(3)
         if self.version >= 4:
@@ -56,6 +58,7 @@ class Gbx(object):
             self.valid = False
             return
 
+        self.data_size_offset = root_parser.pos
         data_size = root_parser.read_uint32()
         compressed_data_size = root_parser.read_uint32()
         cdata = root_parser.read(compressed_data_size)
@@ -90,7 +93,7 @@ class Gbx(object):
 
             skipsize = -1
             skip = self.bp.read_int32()
-            
+
             if skip == 0x534B4950:
                 skipsize = self.bp.read_uint32()
             else:
@@ -156,9 +159,12 @@ class Gbx(object):
                     self.bp.read_int32()
                 )
 
+                is_tm2 = game_class.map_size[1] == 40
+
                 game_class.req_unlock = self.bp.read_int32()
                 game_class.flags = self.bp.read_int32()
 
+                self.num_blocks_offset = self.bp.pos
                 num_blocks = self.bp.read_int32()
                 i = 0
                 one_more = False
@@ -168,49 +174,55 @@ class Gbx(object):
                     block.name = self.bp.read_string_loopback()
                     if block.name != 'Unassigned1':
                         game_class.blocks.append(block)
-                        
+
                     block.rotation = self.bp.read_byte()
-                    block.position = (
+                    block.position = [
                         self.bp.read_byte(),
                         self.bp.read_byte(),
                         self.bp.read_byte()
-                    )
+                    ]
+
+                    if is_tm2:
+                        block.position = [block.position[0] - 1, block.position[1] - 8, block.position[2] - 1]
 
                     if game_class.flags > 0:
                         block.flags = self.bp.read_uint32()
                     else:
-                        block.flags = self.bp.read_uint16()                        
+                        block.flags = self.bp.read_uint16()
 
                     if block.flags == 0xFFFFFFFF:
                         continue
-                    
+
                     if (block.flags & 0x8000) != 0:
                         block.skin_author = self.bp.read_string_loopback()
                         block.skin = self.bp.read_int32()
                         if block.skin >= 0 and block.skin not in self.classes:
                             cidd = self.bp.read_int32()
-                            logging.debug('Reading block skin {}'.format(block.skin))
+                            logging.debug(
+                                'Reading block skin {}'.format(block.skin))
                             self.read_node(cidd, block.skin)
 
                     if (block.flags & 0x100000) != 0:
                         block.params = self.bp.read_int32()
                         if block.params >= 0 and block.params not in self.classes:
                             cidd = self.bp.read_int32()
-                            logging.debug('Reading block params {}'.format(block.params))                            
+                            logging.debug(
+                                'Reading block params {}'.format(block.params))
                             self.read_node(cidd, block.params)
 
                     if one_more:
                         break
 
-                    if i + 1 == num_blocks:      
+                    if i + 1 == num_blocks:
                         if self.bp.read_uint32() == 10:
-                            one_more = True   
+                            one_more = True
                             i -= 1
 
                         self.bp.skip(-4)
 
                     i += 1
 
+                self.block_data_size = self.bp.pos - self.num_blocks_offset
                 self.bp.skip(12)
             elif cid == 0x03059002:
                 self.bp.read_string()
@@ -244,7 +256,7 @@ class Gbx(object):
                 p = self.bp.read_int32()
                 if p != 0:
                     self.bp.skip(1 + 4 * 3 * 3 + 4 * 3 + 4 + 4 + 4)
-                
+
                 self.bp.read_string()
             elif cid == 0x0304302A:
                 self.bp.read_uint32()

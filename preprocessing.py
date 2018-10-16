@@ -1,99 +1,30 @@
-from __future__ import print_function
-import numpy as np
+import math
+import os
+import pickle
 import random
 import struct
-import headers
 import sys
-import pickle
+from os import chdir, getcwd, listdir
 
-from os import listdir, chdir, getcwd
-import math
-import sys
-import os
+import numpy as np
 
 import gbx
-from blocks import BLOCKS, BASE_BLOCKS, START_LINE_BLOCK, FINISH_LINE_BLOCK, MULTILAP_LINE_BLOCK, is_start, is_finish, is_multilap, is_checkpoint
+import headers
+from block_offsets import BLOCK_OFFSETS, rotate_block_offsets, rotate_track, occupied_track_positions
+from blocks import (BASE_BLOCKS, BLOCKS, FINISH_LINE_BLOCK, BID, BX, BY, BZ,
+                    MULTILAP_LINE_BLOCK, START_LINE_BLOCK, get_block_name,
+                    is_checkpoint, is_finish, is_multilap, is_start)
 from track_blacklist import BLACKLIST
+from multiprocessing import pool
+from scipy import spatial
 
 sys.path.append(os.path.realpath('..'))
 
-ENABLE_START_FINISH_GUARD = False
-ENABLE_FINISH_CLEANUP = True
+ENABLE_START_FINISH_GUARD = True
+DISCARD_NOISY_TRACKS = True
 FILTER_BASE_BLOCKS = True
+ENABLE_SMART_SORT = False
 MAX_MAP_SIZE = (32, 40, 32)
-# ENABLE_SMART_SORT = False
-
-# def block_distance(block_a, block_b):
-#     return math.sqrt(sum((x - y) ** 2 for x, y in zip(block_a.position, block_b.position)))
-
-
-# def find_closest_block_dist(blocks, target):
-#     closest = None
-#     score = sys.maxint
-#     for block in blocks:
-#         if block == target:
-#             continue
-
-#         new_score = block_distance(target, block)
-#         if new_score < score:
-#             closest = block
-#             score = new_score
-
-#     return closest, score
-
-
-# def euclidean_sort(blocks):
-#     search_blocks = blocks
-#     s = []
-
-#     current_block = None
-#     for block in blocks:
-#         try:
-#             if BLOCKS[block.name] == START_LINE_BLOCK or BLOCKS[block.name] == MULTILAP_LINE_BLOCK:
-#                 current_block = block
-#                 break
-#         except KeyError:
-#             continue
-
-#     if current_block == None:
-#         return blocks
-
-#     search_blocks.remove(current_block)
-#     # s.append([])
-#     s.append(current_block)
-
-#     while len(search_blocks) > 0:
-#         current_block, score = find_closest_block_dist(
-#             search_blocks, current_block)
-#         # if score > MAX_BLOCK_DISTANCE:
-#         #     print(
-#         #         '\t-- Closest block distance is too big, creating a new block sequence.')
-#         #     s.append([])
-
-#         s.append(current_block)
-#         search_blocks.remove(current_block)
-
-#     return s
-
-
-def finish_cleanup_blocks(blocks):
-    # Find last finish in the sequence
-    idx = -1
-    for i, block in enumerate(reversed(blocks)):
-        if BLOCKS[block.name] == FINISH_LINE_BLOCK:
-            idx = len(blocks) - i - 1
-            break
-
-        # Appears that we have checkpoints after the finish was placed,
-        # return the original list
-        if idx == -1 and is_checkpoint(block.name):
-            return blocks
-
-    if idx == -1:
-        return blocks
-
-    return blocks[:idx + 1]
-
 
 def filter_base_blocks(blocks):
     l = []
@@ -106,6 +37,62 @@ def filter_base_blocks(blocks):
 
     return l
 
+def dist(x,y):
+    x = np.array(x)
+    y = np.array(y)
+    return np.sqrt(np.sum((x-y) ** 2))
+
+def dfs(g, v, end):
+    current = v
+    explored = [current]
+    while len(g) > 1:
+        g.remove(current)
+        tree = spatial.KDTree(g)
+        current = g[tree.query(current)[1]]
+
+        if current[0] > MAX_MAP_SIZE[0] or current[1] > MAX_MAP_SIZE[1] or current[2] > MAX_MAP_SIZE[2]:
+            continue
+
+        explored.append(current)
+
+    explored.append(g.pop())
+    return explored
+
+def is_noisy(blocks):
+    far = 0
+    for i in range(1, len(blocks)):
+        block_pos = np.array(blocks[i].position)
+        prev_pos = np.array(blocks[i - 1].position)
+
+        if dist(block_pos, prev_pos) > 4:
+            far += 1
+
+    if far / float(len(blocks)) > 0.2:
+        return True
+
+    return False
+
+def sort_blocks(blocks):
+    track = [block.to_tup() for block in blocks]
+    positions = occupied_track_positions(track)
+    positions = [list(pos) for pos in positions]
+
+    v = []
+    end = []
+    for block in track:
+        if block[BID] == START_LINE_BLOCK:
+            v = list(block[BX:BZ+1])
+        elif block[BID] == FINISH_LINE_BLOCK:
+            end = list(block[BX:BZ+1])
+
+    trace = dfs(positions, v, end)
+    sorted_track = []
+    for pos in trace:
+        for block in track:
+            if list(block[BX:BZ+1]) == pos:
+                sorted_track.append(block)
+
+    return sorted_track
 
 def process_blocks(source_blocks):
     if FILTER_BASE_BLOCKS:
@@ -113,13 +100,40 @@ def process_blocks(source_blocks):
     else:
         blocks = source_blocks[:]
 
-    if ENABLE_FINISH_CLEANUP:
-        blocks = finish_cleanup_blocks(blocks)
+    i = 0
 
-    # if ENABLE_SMART_SORT:
-    #     return euclidean_sort(blocks)
+    if DISCARD_NOISY_TRACKS:
+        if is_noisy(blocks):
+            return None
 
-    return blocks
+    if ENABLE_SMART_SORT:
+        blocks = sort_blocks(blocks)
+
+        sequences = []
+        current_seq = [blocks[0]]
+        while i < len(blocks) - 1:
+            prev = blocks[i]
+            block = blocks[i + 1]
+
+            prev_offsets = occupied_track_positions([prev])
+            block_offsets = occupied_track_positions([block])
+
+            m = 100
+            for off in block_offsets:
+                for off2 in prev_offsets:
+                    m = min(m, dist(off, off2))
+
+            if m > 4:
+                if len(current_seq) > 5:
+                    sequences.append(current_seq)
+                current_seq = []
+            else:
+                current_seq.append(block)
+
+            i += 1
+        return sequences
+    else:
+        return [[block.to_tup() for block in blocks]]
 
 def process(gbx_file, fname):
     challenge = gbx_file.get_class_by_id(gbx.GbxType.CHALLENGE)
@@ -134,43 +148,22 @@ def process(gbx_file, fname):
 
     has_start = False
     has_finish = False
-    has_multilap = False
     for block in challenge.blocks:
         try:
             if is_start(block.name):
                 has_start = True
             elif is_finish(block.name):
                 has_finish = True
-            elif is_multilap(block.name):
-                has_multilap = True
 
         except KeyError:
             continue
 
-    if ENABLE_START_FINISH_GUARD and not ((has_start and has_finish) or has_multilap):
+    if ENABLE_START_FINISH_GUARD and not (has_start and has_finish):
         print('\t-- Skipping map without start and an end\n')
         return None
 
-    sequence = process_blocks(challenge.blocks)
-    blocks = [block.to_tup() for block in sequence]
-
-    return (fname, blocks)
-
-
-def save_generic_data(data):
-    f = open('data.txt', 'w+')
-    for seq in data:
-        line = ''
-        for i, block in enumerate(seq):
-            fs = '{} {} {} {} {}'
-            if i < len(seq) - 1:
-                fs += ','
-
-            line += fs.format(
-                block[0], block[1], block[2], block[3], block[4])
-        f.write(line + '\n')
-
-    f.close()
+    sequences = process_blocks(challenge.blocks)
+    return (fname, sequences)
 
 rootdir = getcwd()
 
@@ -185,27 +178,43 @@ if len(sys.argv) < 3:
 traindir = os.path.join(os.getcwd(), sys.argv[1])
 chdir(traindir)
 
-train_data = []
-
-print('-- Processing train data')
-i = 1
-for fname in listdir(traindir):
-    print('\tProcessing {}:\t{}'.format(i, fname))
-    i += 1
-
+def process_fname(fname):
     if fname in BLACKLIST:
         print('\t-- Skipping blacklisted track.\n')
-        continue
+        return None
 
+    print('\tProcessing: \t{}'.format(fname))
     gbx_file = gbx.Gbx(fname)
-    entry = process(gbx_file, fname)
-    if entry == None:
-        continue
+    return process(gbx_file, fname)
 
-    train_data.append(entry)
 
-print('Saving training data, length: {}'.format(len(train_data)))
-chdir(rootdir)
-train_file = open(sys.argv[2], 'wb+')
-pickle.dump(train_data, train_file)
-train_file.close()
+train_data = []
+
+if __name__ == '__main__':
+    names = listdir(traindir)
+    for i in range(0, len(names), 100):
+        p = pool.Pool()
+        end = min(len(names) - 1, i + 100)
+        entries = p.map(process_fname, names[i:end])
+        p.close()
+
+        for entry in entries:
+            if not entry:
+                continue
+
+            fname = entry[0]
+            sequences = entry[1]
+            for seq in sequences:
+                train_data.append((fname, seq))
+        print(f'-- Processed {i + 100} tracks.')
+        print(f'-- Saving training data, length: {len(train_data)}')
+        chdir(rootdir)
+        train_file = open(sys.argv[2], 'wb+')
+        pickle.dump(train_data, train_file)
+        train_file.close()
+        chdir(traindir)
+
+    chdir(rootdir)
+    train_file = open(sys.argv[2], 'wb+')
+    pickle.dump(train_data, train_file)
+    train_file.close()

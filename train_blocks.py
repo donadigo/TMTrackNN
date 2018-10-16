@@ -1,7 +1,7 @@
 from keras.models import Sequential, Input, Model, load_model
 from keras.utils import plot_model
 from keras.layers.core import Dense, Dropout
-from keras.layers import LSTM
+from keras.layers import LSTM, Bidirectional
 from keras.callbacks import ModelCheckpoint
 
 import numpy as np 
@@ -10,14 +10,14 @@ import random
 import sys
 import argparse
 
-from config import NET_CONFIG
-from blocks import BLOCKS, BID, BX, BY, BZ, BROT, EMPTY_BLOCK, one_hot_bid, pad_block_sequence
-from builder import Builder
-
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
 np.set_printoptions(suppress=True)
+
+from config import NET_CONFIG
+from blocks import BLOCKS, BID, BX, BY, BZ, BROT, EMPTY_BLOCK, EDITOR_IDS
+from blocks import one_hot_bid, one_hot_pos, one_hot_rotation, pad_block_sequence
+from builder import Builder
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-g', '--use-generator', dest='usegen', action='store_true', default=False)
@@ -37,6 +37,31 @@ train_data = pickle.load(train_data_file)
 if args.track_num:
     train_data = train_data[:args.track_num]
 
+def sample(preds, temperature=1.0):
+    # helper function to sample an index from a probability array
+    preds = np.asarray(preds).astype('float64')
+    preds = np.log(preds) / temperature
+    exp_preds = np.exp(preds)
+    preds = exp_preds / np.sum(exp_preds)
+    probas = np.random.multinomial(1, preds, 1)
+    return np.argmax(probas)
+
+def generate_block_seq(model, blen):
+    X = np.zeros((1, lookback, len(BLOCKS)))
+    for _ in range(blen):
+        preds = model.predict(X)
+        bid = sample(preds[0]) + 1
+        try:
+            eid = EDITOR_IDS[bid]
+        except KeyError:
+            continue
+        print(eid)
+
+        for i in range(1, lookback):
+            X[0][i - 1] = X[0][i]
+
+        X[0][-1] = one_hot_bid(bid)
+
 def process_entry(blocks, X, y):
     if len(blocks) < lookback:
         return
@@ -54,7 +79,7 @@ def process_entry(blocks, X, y):
 
         X.append([one_hot_bid(block[0]) for block in blocks_in])
         y.append(one_hot_bid(block_out[0]))
-    
+
 def track_sequence_generator(batch_size):
     while True:
         X = []
@@ -69,9 +94,9 @@ def track_sequence_generator(batch_size):
 
 def build_model():
     model = Sequential()
-    model.add(LSTM(300, input_shape=(lookback, len(BLOCKS)), return_sequences=True))
+    model.add(LSTM(300, return_sequences=True, input_shape=(lookback, len(BLOCKS))))
     model.add(Dropout(0.3))
-    model.add(LSTM(300))
+    model.add(LSTM(300, return_sequences=True))
     model.add(Dropout(0.3))
     model.add(Dense(len(BLOCKS), activation='softmax'))
 
@@ -86,7 +111,7 @@ if not args.usegen:
 
     i = 0
     for entry in train_data:
-        print('\t-- Preparing sequence {}: {}'.format(i, entry[0]))
+        print(f'\t-- Preparing sequence {i}: {entry[0]}')
         process_entry(entry[1], dataX, dataY)
         i += 1
 
@@ -96,27 +121,28 @@ if not args.usegen:
     del dataX
     del dataY
 
-    print('Input data shape: {}'.format(X.shape))
-    print('Output data shape: {}'.format(y.shape))
+    print(f'Input data shape: {X.shape}')
+    print(f'Output data shape: {y.shape}')
 else:
     dataset_len = 0
     for entry in train_data:
         dataset_len += len(entry[1])
 
-    print('Dataset size: {}'.format(dataset_len))
-    print('Input shape: {}'.format((batch_size, lookback, len(BLOCKS))))
-    print('Output shape: {}'.format(len(BLOCKS)))
+    print(f'Dataset size: {dataset_len}')
+    print(f'Input shape: {(batch_size, lookback, len(BLOCKS))}')
+    print(f'Output shape: {len(BLOCKS)}')
 
 gen = track_sequence_generator(batch_size)
-# checkpoint = ModelCheckpoint(filepath='models/block-model.h5', monitor='loss', verbose=1, save_best_only=True, mode='min')
 
+callbacks = []
 if args.model_filename:
     model = load_model(args.model_filename)
+    callbacks.append(ModelCheckpoint(filepath=args.model_filename, monitor='loss', verbose=1, save_best_only=True, mode='min'))
 else:
     model = build_model()
 
 model.summary()
 if args.usegen:
-    history = model.fit_generator(gen, steps_per_epoch=dataset_len / batch_size, epochs=200)
+    history = model.fit_generator(gen, steps_per_epoch=dataset_len / batch_size, epochs=200, callbacks=callbacks)
 else:
-    history = model.fit(X, y, batch_size=128, epochs=100, verbose=1, shuffle=True)
+    history = model.fit(X, y, batch_size=128, epochs=100, verbose=1, shuffle=True, callbacks=callbacks)

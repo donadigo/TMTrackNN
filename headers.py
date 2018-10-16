@@ -18,7 +18,7 @@ class MapBlock(object):
     def __init__(self):
         self.name = None
         self.rotation = 0
-        self.position = ()
+        self.position = []
         self.flags = 0
         self.params = 0
         self.skin_author = None

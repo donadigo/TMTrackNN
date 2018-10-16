@@ -44,7 +44,7 @@ class ByteReader(object):
     def read_byte(self):
         val = self.get_bytes(1)[0]
         self.pos += 1
-        return val   
+        return val
 
     def skip(self, num_bytes):
         self.pos += num_bytes
@@ -61,7 +61,6 @@ class ByteReader(object):
             return s
         
         if inp == 0:
-            print ("READ STRING")
             s = self.read_string()
             self.stored_strings.append(s)
             return s

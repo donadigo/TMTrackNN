@@ -1,7 +1,7 @@
 from keras.models import Input, Model, load_model
 from keras.utils import plot_model
 from keras.layers.core import Dense, Dropout
-from keras.layers import LSTM
+from keras.layers import CuDNNLSTM, LSTM, Bidirectional, concatenate
 from keras.callbacks import ModelCheckpoint
 
 import numpy as np 
@@ -12,6 +12,7 @@ import argparse
 
 from config import NET_CONFIG
 from blocks import BLOCKS, BID, BX, BY, BZ, BROT, EMPTY_BLOCK, one_hot_bid, one_hot_pos, one_hot_rotation, pad_block_sequence
+from block_offsets import rotate_track_tuples
 from builder import Builder
 
 import os
@@ -89,7 +90,9 @@ def track_sequence_generator(batch_size):
         y_rot = []
         while len(X) < batch_size:
             entry = random.choice(train_data)
-            process_entry(entry[1], X, y_pos_x, y_pos_y, y_pos_z, y_rot)
+            r = random.randrange(0, 4)
+            blocks = rotate_track_tuples(entry[1], r)
+            process_entry(blocks, X, y_pos_x, y_pos_y, y_pos_z, y_rot)
         
         X = np.reshape(X[:batch_size], (batch_size, lookback, INP_LEN))
         y_pos_x = np.array(y_pos_x[:batch_size])
@@ -98,13 +101,13 @@ def track_sequence_generator(batch_size):
         y_rot = np.array(y_rot[:batch_size])
         yield X, [y_pos_x, y_pos_y, y_pos_z, y_rot]
 
-
 def build_model():
     inp = Input(shape=(lookback, INP_LEN))
-    x = LSTM(200, return_sequences=True)(inp)
-    x = Dropout(0.3)(x)
-    x = LSTM(200)(x)
-    x = Dropout(0.3)(x)
+    x = Bidirectional(LSTM(512, return_sequences=True))(inp)
+    x = Dropout(0.5)(x)
+    x = Bidirectional(LSTM(256))(x)
+    x = Dropout(0.5)(x)
+
     pos_x = Dense(32, activation='softmax', name='pos_x')(x)
     pos_y = Dense(32, activation='softmax', name='pos_y')(x)
     pos_z = Dense(32, activation='softmax', name='pos_z')(x)
@@ -130,29 +133,32 @@ if not args.usegen:
     y_pos_z = np.array(y_pos_z)
     y_rot = np.array(y_rot)
 
-    print('Input shape: {}'.format(X.shape))
-    print('Output shape: {}, {}, {}, {}'.format(y_pos_x.shape, y_pos_y.shape, y_pos_z.shape, y_rot.shape))
+    print(f'Input shape: {X.shape}')
+    print(f'Output shape: {y_pos_x.shape}, {y_pos_y.shape}, {y_pos_z.shape}, {y_rot.shape}')
 else:
     dataset_len = 0
     for entry in train_data:
         dataset_len += len(entry[1])
 
-    print('Dataset size: {}'.format(dataset_len))
-    print('Input shape: {}'.format((batch_size, lookback, INP_LEN)))
-    print('Output shape: {}, {}'.format((POS_LEN, 32), (1, ROTATE_LEN)))
+    dataset_len *= 4
+
+    print(f'Dataset size: {dataset_len}')
+    print(f'Input shape: {(batch_size, lookback, INP_LEN)}')
+    print('Output shape: (32, 32, 32, 4)')
     
 gen = track_sequence_generator(batch_size)
-# checkpoint = ModelCheckpoint(filepath='models/position-model.h5', monitor='loss', verbose=1, save_best_only=True, mode='min')
 
+callbacks = []
 if args.model_filename:
     model = load_model(args.model_filename)
+    callbacks.append(ModelCheckpoint(filepath=args.model_filename, monitor='loss', verbose=1, save_best_only=True, mode='min'))
 else:
     model = build_model()
 
-b = Builder(block_model, model, None, lookback, train_data, True)
+b = Builder(block_model, model, lookback, train_data, True)
 
 model.summary()
 if args.usegen:
-    history = model.fit_generator(gen, steps_per_epoch=dataset_len / batch_size, epochs=200)
+    history = model.fit_generator(gen, steps_per_epoch=dataset_len / batch_size, epochs=200, callbacks=callbacks)
 else:
-    history = model.fit(X, [y_pos_x, y_pos_y, y_pos_z, y_rot], batch_size=batch_size, epochs=200, verbose=1)
+    history = model.fit(X, [y_pos_x, y_pos_y, y_pos_z, y_rot], batch_size=batch_size, epochs=200, verbose=1, callbacks=callbacks)
