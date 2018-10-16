@@ -28,15 +28,16 @@ There are 2 neural networks involved in the training process, both are LSTM netw
 
 To train the block net with the trained model in the `models/` directory:
 ```
-python -i train_blocks.py -g -l models/block-model.h5
+python3 -i train_blocks.py -g -l models/block-model.h5
 ```
 
 To train the position net with the trained model in the `models/` directory:
 ```
-python -i train_pos.py -g -l models/position-model.h5
+python3 -i train_pos.py -g -l models/position-model.h5
 ```
 
-Unfortunately both files require manually stopping the training process and saving the models using `model.save('model-filename.h5')`, at some point there will probably be model checkpointing built in to the argument options.
+Invoking either train_blocks.py or train_pos.py with the `-l` option will automatically 
+use model checkpointing to save new models with the model filename that was loaded.
 
 ## Generating new tracks
-The process here is also manual and needs more work / documentation. At the moment it's possible to generate a new track using `builder.py` and save the track to .Gbx using `savegbx.py`.
+The process here is also manual and needs more work / documentation. At the moment it's possible to generate a new track using `builder.py` and save the track to .Gbx using `savegbx.py`. If you are on Linux, there's also `livebuild.py` which is a GTK3 UI to generate new tracks and save them to a file.
