@@ -1,5 +1,5 @@
-import struct
 import logging
+import struct
 from io import IOBase
 
 
@@ -65,6 +65,13 @@ class ByteReader(object):
     def read_byte(self):
         val = self.get_bytes(1)[0]
         self.pos += 1
+        return val
+
+    def read_info(self, info, f):
+        prev = self.pos
+        self.pos = info.pos
+        val = f()
+        self.pos = prev
         return val
 
     def skip(self, num_bytes):
