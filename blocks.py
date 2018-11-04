@@ -359,9 +359,9 @@ BLOCKS = {
     'StadiumDecoTowerTowerD': 356,
     'StadiumDecoTowerTowerC': 357,
 
-	# 'StadiumRoadDirtHighToRoad': 358,
-	# 'StadiumDirtHill': 359,
-	# 'StadiumPlatformBiSlope2StartSmall': 360
+    # 'StadiumRoadDirtHighToRoad': 358,
+    # 'StadiumDirtHill': 359,
+    # 'StadiumPlatformBiSlope2StartSmall': 360
 }
 
 # TODO: needs a separate dict / list for TM2 Stadium
@@ -660,11 +660,13 @@ EDITOR_IDS = {
     292: '8-9-7'
 }
 
+
 def one_hot_bid(bid):
     arr = [0] * len(BLOCKS)
     if bid != 0:
         arr[bid - 1] = 1
     return arr
+
 
 def one_hot_pos(p, base=0):
     arr = [0] * 32
@@ -672,14 +674,17 @@ def one_hot_pos(p, base=0):
     arr[idx] = 1
     return arr
 
+
 def one_hot_rotation(r):
     arr = [0] * 4
     arr[r] = 1
     return arr
 
+
 def pad_block_sequence(seq, maxlen):
     pad = [EMPTY_BLOCK] * (maxlen - len(seq))
     return pad + seq
+
 
 def get_block_name(bid):
     for name, _bid in BLOCKS.items():
@@ -687,21 +692,29 @@ def get_block_name(bid):
             return name
     return None
 
+
 def is_checkpoint(name):
     return 'Checkpoint' in name
+
 
 def is_start(name):
     return name == 'StadiumRoadMainStartLine'
 
+
 def is_finish(name):
     return name == 'StadiumRoadMainFinishLine'
+
 
 def is_multilap(name):
     return 'MultiLap' in name or name == 'StadiumRoadMainStartFinishLine'
 
-BID, BX, BY, BZ, BROT = range(5)
+
+BID, BX, BY, BZ, BROT, BFLAGS = range(6)
 EMPTY_BLOCK = (0, 0, 0, 0, 0)
-BASE_BLOCKS = list(range(6, 186+1)) + list(range(196, 233+1))
+BASE_BLOCKS = list(range(6, 97+1)) + \
+    list(range(105, 186+1)) + list(range(196, 233+1))
+GROUND_BLOCKS = [20] + list(range(196, 233+1))
+TRANSITION_BLOCKS = [130, 214, 215]
 START_LINE_BLOCK = BLOCKS['StadiumRoadMainStartLine']
 FINISH_LINE_BLOCK = BLOCKS['StadiumRoadMainFinishLine']
 MULTILAP_LINE_BLOCK = BLOCKS['StadiumRoadMainStartFinishLine']

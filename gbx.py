@@ -1,10 +1,11 @@
-import struct
-import lzo
 import logging
+import struct
 from enum import IntEnum
 
-from bytereader import ByteReader
 import headers
+import lzo
+from bytereader import ByteReader
+
 
 class GbxType(IntEnum):
     CHALLENGE = 0x03043000
@@ -22,46 +23,46 @@ class GbxType(IntEnum):
     GAME_SKIN = 0x03031000
     GAME_PLAYER_PROFILE = 0x0308C000
     MW_NOD = 0x01001000
-    
+
+
 class Gbx(object):
     def __init__(self, path):
         self.f = open(path, 'rb')
         self.pos = 0
 
-        root_parser = ByteReader(self.f)
+        self.root_parser = ByteReader(self.f)
 
-        self.magic = root_parser.read(3, '3s')
+        self.magic = self.root_parser.read(3, '3s')
         self.valid = self.magic == 'GBX'
-        self.version = root_parser.read(2, 'H')
+        self.version = self.root_parser.read(2, 'H')
         self.classes = {}
-        self.num_blocks_offset = -1
-        self.block_data_size = -1
-        self.data_size_offset = -1
+        self.positions = {}
 
-        root_parser.skip(3)
+        self.root_parser.skip(3)
         if self.version >= 4:
-            root_parser.skip(1)
+            self.root_parser.skip(1)
 
         if self.version >= 3:
-            self.class_id = root_parser.read_uint32()
+            self.class_id = self.root_parser.read_uint32()
             self.type = GbxType(self.class_id)
 
             if self.version >= 6:
-                self.user_data_size = root_parser.read_uint32()
-                root_parser.skip(self.user_data_size)
+                self.read_user_data()
 
-                self.num_nodes = root_parser.read_uint32()
+            self.num_nodes = self.root_parser.read_uint32()
 
-        self.num_external_nodes = root_parser.read_uint32()
+        self.num_external_nodes = self.root_parser.read_uint32()
         if self.num_external_nodes != 0:
             print('The Gbx class does not support files with external dependencies yet.')
             self.valid = False
             return
 
-        self.data_size_offset = root_parser.pos
-        data_size = root_parser.read_uint32()
-        compressed_data_size = root_parser.read_uint32()
-        cdata = root_parser.read(compressed_data_size)
+        self.root_parser.push_info()
+        self.positions['data_size'] = self.root_parser.pop_info()
+
+        data_size = self.root_parser.read_uint32()
+        compressed_data_size = self.root_parser.read_uint32()
+        cdata = self.root_parser.read(compressed_data_size)
         self.data = bytearray(lzo.decompress(cdata, False, data_size))
 
         self.bp = ByteReader(self.data[:])
@@ -74,6 +75,43 @@ class Gbx(object):
 
         return None
 
+    def read_user_data(self):
+        entries = {}
+
+        self.root_parser.push_info()
+        self.user_data_size = self.root_parser.read_uint32()
+        self.positions['user_data_size'] = self.root_parser.pop_info()
+
+        user_data_pos = self.root_parser.pos
+        num_chunks = self.root_parser.read_uint32()
+        for _ in range(num_chunks):
+            cid = self.root_parser.read_uint32()
+            self.root_parser.push_info()
+            size = self.root_parser.read_uint32()
+            self.positions[str(cid)] = self.root_parser.pop_info()
+            entries[cid] = size
+
+        for cid, size in entries.items():
+            self.read_header_entry(cid, size)
+
+        self.root_parser.pos = user_data_pos + self.user_data_size
+
+    def read_header_entry(self, cid, size):
+        if cid == 0x03043003:
+            self.root_parser.read_byte()
+            for _ in range(3):
+                self.root_parser.read_string_loopback()
+
+            game_class = headers.CGameCommon(cid)
+
+            self.root_parser.push_info()
+            game_class.track_name = self.root_parser.read_string()
+            self.positions['track_name'] = self.root_parser.pop_info()
+
+            self.classes[cid] = game_class
+        else:
+            self.root_parser.skip(size)
+
     def read_node(self, class_id, depth):
         oldcid = 0
         cid = 0
@@ -82,7 +120,7 @@ class Gbx(object):
         if class_id == GbxType.CHALLENGE:
             game_class = headers.CGameChallenge(class_id)
 
-        self.classes[depth] = game_class
+        self.classes[class_id] = game_class
 
         while True:
             oldcid = cid
@@ -148,7 +186,11 @@ class Gbx(object):
                 game_class.map_uid = self.bp.read_string_loopback()
                 game_class.environment = self.bp.read_string_loopback()
                 game_class.map_author = self.bp.read_string_loopback()
+
+                self.bp.push_info()
                 game_class.map_name = self.bp.read_string()
+                self.positions['map_name'] = self.bp.pop_info()
+
                 game_class.mood = self.bp.read_string_loopback()
                 game_class.env_bg = self.bp.read_string_loopback()
                 game_class.env_author = self.bp.read_string_loopback()
@@ -164,7 +206,7 @@ class Gbx(object):
                 game_class.req_unlock = self.bp.read_int32()
                 game_class.flags = self.bp.read_int32()
 
-                self.num_blocks_offset = self.bp.pos
+                self.bp.push_info()
                 num_blocks = self.bp.read_int32()
                 i = 0
                 one_more = False
@@ -183,7 +225,8 @@ class Gbx(object):
                     ]
 
                     if is_tm2:
-                        block.position = [block.position[0] - 1, block.position[1] - 8, block.position[2] - 1]
+                        block.position = [
+                            block.position[0] - 1, block.position[1] - 8, block.position[2] - 1]
 
                     if game_class.flags > 0:
                         block.flags = self.bp.read_uint32()
@@ -222,7 +265,7 @@ class Gbx(object):
 
                     i += 1
 
-                self.block_data_size = self.bp.pos - self.num_blocks_offset
+                self.positions['block_data'] = self.bp.pop_info()
                 self.bp.skip(12)
             elif cid == 0x03059002:
                 self.bp.read_string()
@@ -271,7 +314,6 @@ class Gbx(object):
             elif cid == 0x03059000:
                 self.bp.read_string()
                 self.bp.read_string()
-
             elif skipsize != -1:
                 self.bp.skip(skipsize)
                 cid = oldcid

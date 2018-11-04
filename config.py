@@ -1,5 +1,6 @@
 NET_CONFIG = {
     'batch_size': 128,
     'lookback': 20,
-    'train_fname': 'data/train_data_clean.pkl'
+    'train_fname': 'data/train_data2.pkl',
+    'patterns_fname': 'data/pattern_data.pkl'
 }

@@ -1,15 +1,20 @@
-import gi
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, GdkPixbuf, GLib
-
+import os
 import pickle
-import os, sys
-import time, threading
-import gbx
-import blocks as bl
-from config import NET_CONFIG
+import sys
+import threading
+import time
+
 from keras.models import load_model
+
+import blocks as bl
+import gbx
+import gi
 from builder import Builder
+from config import NET_CONFIG
+from gi.repository import GdkPixbuf, GLib, Gtk
+
+gi.require_version('Gtk', '3.0')
+
 
 IMG_SIZE = 30
 lookback = NET_CONFIG['lookback']

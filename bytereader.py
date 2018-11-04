@@ -2,6 +2,17 @@ import struct
 import logging
 from io import IOBase
 
+
+class PositionInfo(object):
+    def __init__(self, pos, size):
+        self.pos = pos
+        self.size = size
+
+    @property
+    def valid(self):
+        return self.pos > -1 and self.size > 0
+
+
 class ByteReader(object):
     def __init__(self, obj):
         self.data = obj
@@ -13,6 +24,16 @@ class ByteReader(object):
         self.pos = 0
         self.seen_loopback = False
         self.stored_strings = []
+        self.current_info = PositionInfo(-1, 0)
+
+    def push_info(self):
+        self.current_info = PositionInfo(self.pos, 0)
+
+    def pop_info(self):
+        self.current_info.size = self.pos - self.current_info.pos
+        info = self.current_info
+        self.current_info = PositionInfo(-1, 0)
+        return info
 
     def read(self, num_bytes, typestr=None):
         val = self.get_bytes(num_bytes)
@@ -52,19 +73,19 @@ class ByteReader(object):
     def read_string_loopback(self):
         if not self.seen_loopback:
             self.read_uint32()
-        
+
         self.seen_loopback = True
         inp = self.read_uint32()
         if (inp & 0xc0000000) != 0 and (inp & 0x3fffffff) == 0:
             s = self.read_string()
             self.stored_strings.append(s)
             return s
-        
+
         if inp == 0:
             s = self.read_string()
             self.stored_strings.append(s)
             return s
-        
+
         if inp == -1:
             return ''
 
@@ -73,17 +94,18 @@ class ByteReader(object):
                 return 'Valley'
             elif inp == 12:
                 return 'Canyon'
-            elif inp == 17:   
+            elif inp == 17:
                 return 'TMCommon'
-            elif inp == 202:   
+            elif inp == 202:
                 return 'Storm'
-            elif inp == 299:   
+            elif inp == 299:
                 return 'SMCommon'
-            elif inp == 10003:   
+            elif inp == 10003:
                 return 'Common'
 
         inp &= 0x3fffffff
         if inp - 1 >= len(self.stored_strings):
-            logging.debug('String not found in list with index: {}'.format(bin(inp)))
+            logging.debug(
+                'String not found in list with index: {}'.format(bin(inp)))
             return ''
         return self.stored_strings[inp - 1]

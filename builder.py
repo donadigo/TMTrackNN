@@ -1,148 +1,61 @@
-import numpy as np
-import random
-import blocks as bl
-from blocks import BID, BX, BY, BZ, BROT
-from block_offsets import intersects
 import pickle
+import random
+
+import numpy as np
+
+import blocks as bl
+from track_utils import intersects, occupied_track_positions, rotate_track_tuples, dist
+from blocks import BID, BROT, BX, BY, BZ
 
 POS_LEN = 3
 ROTATE_LEN = 4
 
+
 class Builder(object):
-    def __init__(self, block_model, position_model, lookback, seed_data, use_softmax_backend):
+    def __init__(self, block_model, position_model, lookback, seed_data, pattern_data, scaler, temperature=1.2):
         self.block_model = block_model
         self.position_model = position_model
         self.lookback = lookback
         self.seed_data = seed_data
+        self.scaler = scaler
         self.track = []
-
-        if use_softmax_backend:
-            self.block_to_vec = self.block_to_vec_softmax
-            self.unpack_position_preds = self.unpack_position_preds_softmax
-        else:
-            self.block_to_vec = self.block_to_vec_vector
-            self.unpack_position_preds = self.unpack_position_preds_vector
-
-        self.inp_len = len(bl.BLOCKS) + (32 * POS_LEN) + ROTATE_LEN
+        self.inp_len = len(bl.BLOCKS) + POS_LEN + ROTATE_LEN
+        self.temperature = temperature
+        self.pattern_data = pattern_data
 
     @staticmethod
     def random_start_block():
-        return (bl.START_LINE_BLOCK, random.randrange(10, 22), random.randrange(1, 11), random.randrange(10, 22), random.randrange(0, 4))
+        return (bl.START_LINE_BLOCK, 0, 0, 0, random.randrange(0, 4))
 
-    @staticmethod
-    def sample(preds, temperature=1.0):
+    def sample(self, preds):
         # helper function to sample an index from a probability array
         preds = np.asarray(preds).astype('float64')
-        preds = np.log(preds) / temperature
+        preds = np.log(preds) / self.temperature
         exp_preds = np.exp(preds)
         preds = exp_preds / np.sum(exp_preds)
         probas = np.random.multinomial(1, preds, 1)
         return np.argmax(probas)
 
     @staticmethod
-    def block_to_vec_vector(inp_len, block, encode_pos=True):
+    def block_to_vec(inp_len, block, scaler, encode_pos):
         if block[0] == 0:
             return [0] * inp_len
 
         bid_vec = bl.one_hot_bid(block[0])
         if encode_pos:
-            pos_vec = bl.one_hot_pos(block[BX]) + bl.one_hot_pos(block[BY], True) + bl.one_hot_pos(block[BZ])
+            pos_vec = scaler.transform([block[BX:BZ+1]])[0]
             rot_vec = bl.one_hot_rotation(block[4])
         else:
-            pos_vec = [0] * (POS_LEN * 32)
-            rot_vec = [0] * ROTATE_LEN
+            pos_vec = [-1, -1, -1]
+            rot_vec = [-1, -1, -1, -1]
 
         return bid_vec + list(pos_vec) + rot_vec
 
     @staticmethod
-    def block_to_vec_softmax(inp_len, block, encode_pos=True):
-        if block[0] == 0:
-            return [0] * inp_len
-
-        bid_vec = bl.one_hot_bid(block[0])
-        if encode_pos:
-            pos_vec = bl.one_hot_pos(block[BX]) + bl.one_hot_pos(block[BY], True) + bl.one_hot_pos(block[BZ])
-            rot_vec = bl.one_hot_rotation(block[4])
-        else:
-            pos_vec = [0] * (POS_LEN * 32)
-            rot_vec = [0] * ROTATE_LEN
-
-        return bid_vec + list(pos_vec) + rot_vec
-
-    @staticmethod
-    def unpack_position_preds_vector(preds):
-        pos_vec = [int(round(axis)) for axis in preds[0][0]]
-        pos_rot = np.argmax(preds[1][0])
-        return pos_vec, pos_rot
-
-    @staticmethod
-    def unpack_position_preds_softmax(preds):
-        pos_x = np.argmax(preds[0][0])
-        pos_y = np.argmax(preds[1][0]) + 1
-        pos_z = np.argmax(preds[2][0])
-        pos_rot = np.argmax(preds[3][0])
-        print (preds[0][0][pos_x], preds[1][0][pos_y - 1], preds[2][0][pos_z])
-        return (pos_x, pos_y, pos_z), pos_rot
-        
-    def intersects_track_vector(self, tblock):
-        d = self.decoded_track()
-        prev = d[-1]
-        d.append((tblock[BID],
-                tblock[BX] + prev[BX],
-                tblock[BY] + prev[BY],
-                tblock[BZ] + prev[BZ],
-                tblock[BROT]
-        ))
-
-        s = d[-1][BX:BZ+1]
-        for block in d[:-1]:
-            if block[BX:BZ+1] == s:
-                return True
-
-        return False
- 
-    def intersects_track_softmax(self, tblock):
-        for block in self.track:
-            if block[BX:BZ+1] == tblock[BX:BZ+1]:
-                return True
-        
-        return False
-
-    def predict_next_block(self, X_block, X_position):
-        block_preds = self.block_model.predict(X_block)[0]
-        next_block = self.sample(block_preds, 1.2) + 1
-
-        X_position[0][-1] = self.block_to_vec(self.inp_len, self.track[-1], True)
-
-        for i in range(1, self.lookback):
-            X_block[0][i - 1] = X_block[0][i]
-
-        for i in range(1, self.lookback):
-            X_position[0][i - 1] = X_position[0][i]
-
-        X_block[0][-1] = bl.one_hot_bid(next_block)
-        X_position[0][-1] = self.block_to_vec(self.inp_len, (next_block, 0, 0, 0, 0), False)
-
-        pos_preds = self.position_model.predict(X_position)
-        pos_vec, pos_rot = self.unpack_position_preds(pos_preds)
-        return (next_block, pos_vec[0], pos_vec[1], pos_vec[2], pos_rot), X_block, X_position
-
-    def sample_seed(self, seed_len):
-        seed_idx = random.randrange(0, len(self.seed_data))
-        seed = self.seed_data[seed_idx][1][:seed_len]
-        return seed
-    
-    def encode_seed(self, seed, X_block, X_position):
-        seed.reverse()
-        for i in range(len(seed)):
-            X_block[0][-i - 1] = bl.one_hot_bid(seed[i][BID])
-
-        for i in range(len(seed)):
-            X_position[0][-i - 1] = self.block_to_vec(self.inp_len, seed[i], True)
-
-    def decoded_track(self, start_pos=(0, 0, 0)):
-        d = self.track[:]
-        d[0] = (d[0][BID], start_pos[0], start_pos[1], start_pos[2], d[0][BROT])
+    def decoded_track(track, start_pos=(0, 0, 0)):
+        d = track
+        d[0] = (d[0][BID], start_pos[0], start_pos[1],
+                start_pos[2], d[0][BROT])
         for i in range(1, len(d)):
             block = d[i]
             prev = d[i - 1]
@@ -153,80 +66,189 @@ class Builder(object):
                     block[BROT])
         return d
 
-    def get_track_size(self):
-        d = self.decoded_track()
-        min_x, min_y, min_z = d[0][BX:BZ+1]
-        max_x, max_y, max_z = d[0][BX:BZ+1]
-
-        for block in d[1:]:
-            min_x = min(block[BX], min_x)
-            min_y = min(block[BY], min_y)
-            min_z = min(block[BZ], min_z)
-
-            max_x = max(block[BX], max_x)
-            max_y = max(block[BY], max_y)
-            max_z = max(block[BZ], max_z)
-
-        return abs(max_x - min_x) + 1, abs(max_y - min_y) + 1, abs(max_z - min_z) + 1
-
     @staticmethod
-    def dist(x,y):
-        return np.sqrt(np.sum((x-y) ** 2))
+    def unpack_position_preds_vector(preds):
+        pos_vec = [int(round(axis)) for axis in preds[0][0]]
+        pos_rot = np.argmax(preds[1][0])
+        return pos_vec, pos_rot
 
+    def predict_next_block(self, X_block, X_position, block_override=-1, blacklist=[]):
+        if block_override != -1:
+            next_block = block_override
+        else:
+            block_preds = self.block_model.predict(X_block)[0]
+            block_preds = np.delete(
+                block_preds, [bid - 1 for bid in blacklist])
 
-    def build(self, track_len, use_seed=False, start_seed=[]):
-        self.track = []
+            next_block = self.sample(block_preds) + 1
+
+        for i in range(1, self.lookback):
+            X_position[0][i - 1] = X_position[0][i]
+
+        X_position[0][-1] = self.block_to_vec(self.inp_len,
+                                              (next_block, 0, 0, 0, 0), self.scaler, False)
+
+        pos_preds = self.position_model.predict(X_position)
+        pos_vec, pos_rot = self.unpack_position_preds_vector(pos_preds)
+        return (next_block, pos_vec[0], pos_vec[1], pos_vec[2], pos_rot)
+
+    def sample_seed(self, seed_len):
+        seed_idx = random.randrange(0, len(self.seed_data))
+        seed = self.seed_data[seed_idx][1][:seed_len]
+        return seed
+
+    def score_prediction(self, prev_block, next_block):
+        prev_block = (prev_block[BID], 0, 0, 0, prev_block[BROT])
+        subtrack = rotate_track_tuples(
+            [prev_block, next_block], 4 - prev_block[BROT] % 4)
+
+        prev_block = subtrack[0]
+        next_block = subtrack[1]
+        next_block = (next_block[BID], next_block[BX] - prev_block[BX], next_block[BY] -
+                      prev_block[BY], next_block[BZ] - prev_block[BZ], next_block[BROT])
+
+        prev_block = (prev_block[BID], 0, 0, 0, prev_block[BROT])
+
+        target = (prev_block, next_block)
+        try:
+            return self.pattern_data[target]
+        except KeyError:
+            return 0
+
+    def prepare_inputs(self):
         X_block = np.zeros((1, self.lookback, len(bl.BLOCKS)), dtype=np.bool)
         X_position = np.zeros((1, self.lookback, self.inp_len))
 
-        if len(start_seed) > 0:
-            if use_seed:
-                seed = self.sample_seed(3)
-            else:
-                seed = start_seed[:]
+        blocks = self.track[-self.lookback:]
+        i = -1
+        for block in reversed(blocks):
+            X_block[0][i] = bl.one_hot_bid(block[BID])
+            i -= 1
 
-            self.track.extend(seed)
-            self.encode_seed(seed[:], X_block, X_position)
+        i = -1
+        for block in reversed(blocks):
+            X_position[0][i] = self.block_to_vec(
+                self.inp_len, block, self.scaler, True)
+            i -= 1
+
+        return (X_block, X_position)
+
+    def position_track(self, track):
+        occ = occupied_track_positions(track)
+        min_x = min(occ, key=lambda pos: pos[0])[0]
+        min_y = min(occ, key=lambda pos: pos[1])[1] - 1
+        min_z = min(occ, key=lambda pos: pos[2])[2]
+
+        max_x = max(occ, key=lambda pos: pos[0])[0]
+        max_y = max(occ, key=lambda pos: pos[1])[1] - 1
+        max_z = max(occ, key=lambda pos: pos[2])[2]
+
+        min_x = 0 if min_x >= 0 else min_x
+        min_y = 0 if min_y >= 0 else min_y
+        min_z = 0 if min_z >= 0 else min_z
+
+        max_x = 0 if max_x < 32 else max_x - 31
+        max_y = 0 if max_y < 32 else max_y - 31
+        max_z = 0 if max_z < 32 else max_z - 31
+
+        p = []
+        for block in track:
+            p.append((block[BID], block[BX] - min_x - max_x, block[BY] -
+                      min_y - max_y, block[BZ] - min_z - max_z, block[BROT]))
+
+        return p
+
+    def exceeds_map_size(self, track):
+        occ = occupied_track_positions(track)
+        min_x = min(occ, key=lambda pos: pos[0])[0]
+        min_y = min(occ, key=lambda pos: pos[1])[1] - 1
+        min_z = min(occ, key=lambda pos: pos[2])[2]
+
+        max_x = max(occ, key=lambda pos: pos[0])[0]
+        max_y = max(occ, key=lambda pos: pos[1])[1] - 1
+        max_z = max(occ, key=lambda pos: pos[2])[2]
+
+        return max_x - min_x > 32 or max_y - min_y > 32 or max_z - min_z > 32
+
+    def build(self, track_len, use_seed=False, failsafe=True, verbose=True, save=True, progress_callback=None):
+        if use_seed:
+            self.track = self.sample_seed(3)
         else:
-            self.track.append(self.random_start_block())
-            X_block[0][-1] = bl.one_hot_bid(self.track[-1][BID])
-            X_position[0][-1] = self.block_to_vec(self.inp_len, self.track[-1], True)
+            self.track = [self.random_start_block()]
 
-        prev_X_position = X_position[:]
-        prev_X_block = X_block[:]
-        
-        fails = 0
+        blacklist = []
+        end = False
+        current_min_y = 0
         while len(self.track) < track_len:
-            if fails >= 20:
-                print('More than 20 fails, going back.')
-                X_position = prev_X_position[:]
-                X_block = prev_X_block[:]
-                fails = 0
+            if len(blacklist) >= 5 or (len(blacklist) == 1 and end):
+                if verbose:
+                    print('More than 10 fails, going back.')
 
-            next_block, new_X_block, new_X_positon = self.predict_next_block(X_block[:], X_position[:])
-            if self.unpack_position_preds == self.unpack_position_preds_vector:
-                last_block = self.track[-1]
-                next_block = (next_block[0],
-                            next_block[1] + last_block[1],
-                            next_block[2] + last_block[2],
-                            next_block[3] + last_block[3],
-                            next_block[4])
+                if end:
+                    back = 10
+                else:
+                    back = random.randrange(1, 4)
+                # Remove some last blocks
+                for _ in range(back):
+                    if len(self.track) > 1:
+                        del self.track[-1]
 
-            if intersects(self.track, next_block):
-                fails += 1
-                continue
+                end = False
+                blacklist = []
 
-            if self.dist(np.array(next_block[BX:BZ+1]), np.array(self.track[-1][BX:BZ+1])) > 4:
-                fails += 1
-                continue
+            X_block, X_position = self.prepare_inputs()
 
-            X_block = new_X_block
-            X_position = new_X_positon
+            override_block = -1
+            if end:
+                override_block = bl.FINISH_LINE_BLOCK
 
-            prev_X_position = X_position[:]
-            prev_X_block = X_block[:]
+            next_block = self.predict_next_block(
+                X_block[:], X_position[:], override_block, blacklist=blacklist)
+
+            decoded = self.decoded_track(
+                self.track + [next_block], start_pos=(0, 0, 0))
+
+            # Do not exceed map size
+            if failsafe:
+                if self.exceeds_map_size(decoded):
+                    blacklist.append(next_block[BID])
+                    continue
+
+                if decoded[-1][BY] > current_min_y:
+                    if decoded[-1][BID] == 6 and decoded[-2][BID] == 6 and dist(decoded[-1][BX:BZ+1], decoded[-2][BX:BZ+1]) > 1:
+                        blacklist.append(next_block[BID])
+                        continue
+
+                    if next_block[BID] in bl.GROUND_BLOCKS:
+                        blacklist.append(next_block[BID])
+                        continue
+
+                if (intersects(decoded[:-1], decoded[-1]) or  # Overlaps the track
+                    (next_block[BID] in range(99, 104+1) or next_block[BID] in range(121, 126+1)) or
+                        (next_block[BID] == bl.FINISH_LINE_BLOCK and not end)):  # Tries to put finish before desired track length
+                    blacklist.append(next_block[BID])
+                    continue
+
+                if self.score_prediction(self.track[-1], next_block) < 4:
+                    blacklist.append(next_block[BID])
+                    continue
+
+            blacklist = []
+
+            if decoded[-1][BY] < current_min_y:
+                current_min_y = decoded[-1][BY]
+
             self.track.append(next_block)
-            print(len(self.track))
+            if len(self.track) >= track_len - 1:
+                end = True
 
-        pickle.dump(self.track, open('generated-track.bin', 'wb+'))
-        return self.track
+            if progress_callback:
+                progress_callback(len(self.track), track_len)
+
+            if verbose:
+                print(len(self.track))
+
+        result_track = self.position_track(
+            self.decoded_track(self.track, (0, 0, 0)))
+        pickle.dump(result_track, open('generated-track.bin', 'wb+'))
+        return result_track

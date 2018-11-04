@@ -6,6 +6,13 @@ This is a hobby project for fun to learn Python and also to learn how neural net
 ## What?
 The aim is to generate new maps, tracks using NN's for a racing game called [TrackMania](https://www.trackmania.com/). I created this project a while ago for fun and mostly for educational purposes.
 
+## Generating new tracks
+You can use `build.py` to generate new tracks and save them directly to a .Gbx file e.g:
+```
+python3 build.py -b models/block_model_300_300.h5 -p models/position_model_1024_512.h5 -l 60 -o GeneratedTrack.Challenge.Gbx
+```
+This will generate a track using the provided block and position models that will be 60 blocks in length and save the track to `GeneratedTrack.Challenge.Gbx`
+
 ## Dependencies
 * Python 3
 * Keras
@@ -18,26 +25,39 @@ This repo doesn't contain the dataset itself used to train the models in the `mo
 
 The file contains roughly 3000 tech tracks downloaded directly from [TMX](https://tmnforever.tm-exchange.com/) and preprocessed such that they contain only the simplified version of tracks of each map. The maps themselves were downloaded using these filters: type: tech, order: awards (most), length: ~= 1m.
 
+## Neural Network Architecture
+We can represent a track as a sequence of block placements. Each block consists of 3 main features:
+* block type (that is if it's a turn, a road, a tilted road etc.)
+* it's position on the map (that is it's X, Y, Z coordinates)
+* it's orientation / rotation (if it's facing north, west, south or east)
+
+TMTrackNN at the moment uses 2 neural networks that are used to predict those features of a next block in the sequence. Both NN's are LSTM networks.
+
+### Block model
+The block model receives a sequence of previous block placements. Each previous placement contains a one-hot encoded block type. At the output the network simply predicts the block type to put next. The output's loss function is the softmax function.
+
+### Position model
+The position model receives a complete sequence information about previous block placements. The model is fed with an encoding of previous blocks. Each encoding consists of a one-hot encoded block type, normalized a X, Y, Z vector from previous block and finally a one-hot encoding of it's rotation.
+
+Since we want to predict the next block in the sequence we ask the block model to predict the next block type. Then we ask the position model to predict the position of that block type by encoding it as a last time step in the sequence that is fed to the position model. Therefore the last block in the sequence consists only of the one-hot encoding of the block type and position and rotation vectors are filled with -1's.
+
+The position model's output is two features: the vector to add to the position of last block to get a new position of the new block and the rotation of the new block.
+Their loss function is mean squared error and softmax respectively.
+
 ## Training
 It is recommended to have a dedicated GPU for training the nets, otherwise training process will be very slow.
 
-There are 2 neural networks involved in the training process, both are LSTM networks.
-* `train_blocks.py` trains a network that predicts what next block type to put next given a sequence of blocks.
-
-* `train_pos.py` trains a network that given sequence of blocks and their positions predicts the next position and rotation of the last block in the sequence (that was predicted by the block NN).
-
 To train the block net with the trained model in the `models/` directory:
-```
-python3 -i train_blocks.py -g -l models/block-model.h5
+```sh
+python3 -i train_blocks.py -g -l models/block_model_300_300.h5
 ```
 
 To train the position net with the trained model in the `models/` directory:
-```
-python3 -i train_pos.py -g -l models/position-model.h5
+```sh
+python3 -i train_pos.py -g -l models/position_model_1024_512.h5
 ```
 
-Invoking either train_blocks.py or train_pos.py with the `-l` option will automatically 
+Invoking either `train_blocks.py` or `train_pos.py` with the `-l` option will automatically 
 use model checkpointing to save new models with the model filename that was loaded.
 
-## Generating new tracks
-The process here is also manual and needs more work / documentation. At the moment it's possible to generate a new track using `builder.py` and save the track to .Gbx using `savegbx.py`. If you are on Linux, there's also `livebuild.py` which is a GTK3 UI to generate new tracks and save them to a file.
+`livebuild.py` allows to dynamically generate tracks, it has a Gtk+3 UI to visualize how the track currently looks like. To fully evaluate model's performance, it's recommended to use `build.py` and see the tracks generated in the game itself.

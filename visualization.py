@@ -183,6 +183,7 @@ if len(sys.argv) > 1:
         track = pickle.load(open(load_fname, 'rb+'))
         data = [('', track)]
     else:
+        # data = pickle.load(open('data/train_data.pkl', 'rb'))
         data = pickle.load(open(NET_CONFIG['train_fname'], 'rb'))
         current_idx = int(sys.argv[1])
 

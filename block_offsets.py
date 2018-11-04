@@ -1,6 +1,4 @@
 import numpy as np
-from blocks import get_block_name, BID, BX, BY, BZ, BROT
-from headers import MapBlock
 # Generated via MainaScript:
 # #RequireContext CEditorPlugin
 # #Include "TextLib" as TL
@@ -130,6 +128,7 @@ BLOCK_OFFSETS = {
     'StadiumRoadTiltGTCurve3': [[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [1, 0, 1], [1, 0, 2], [1, 1, 0], [2, 0, 0], [2, 0, 1], [2, 0, 2], [2, 1, 0], [2, 1, 1], [2, 1, 2]],
     'StadiumRoadTiltGTCurve4': [[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [1, 0, 1], [1, 1, 0], [2, 0, 0], [2, 0, 1], [2, 0, 2], [2, 0, 3], [2, 1, 0], [2, 1, 1], [3, 0, 1], [3, 0, 2], [3, 0, 3], [3, 1, 1], [3, 1, 2], [3, 1, 3]],
     'StadiumRoadMainGTDiag2x2Tilt': [[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1], [1, 1, 0], [1, 1, 1], [1, 2, 1]],
+    'StadiumRoadMainGTDiag3x2Tilt': [[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1], [0, 1, 2], [1, 1, 0], [1, 1, 1], [1, 1, 2], [1, 2, 1], [1, 2, 2]],
     'StadiumRoadMainGTDiag2x2TiltMirror': [[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1], [1, 0, 0], [1, 0, 1], [1, 1, 0], [1, 1, 1], [1, 2, 0]],
     'StadiumRoadMainGTDiag3x2TiltMirror': [[0, 1, 0], [0, 1, 1], [0, 1, 2], [0, 2, 1], [0, 2, 2], [1, 0, 0], [1, 0, 1], [1, 1, 0], [1, 1, 1], [1, 1, 2]],
     'StadiumRoadTiltCornerDownLeft': [[0, 0, 0], [0, 1, 0]],
@@ -429,99 +428,3 @@ BLOCK_OFFSETS = {
     'StadiumDecoTowerD': [[0, 0, 0], [0, 1, 0], [0, 2, 0], [0, 3, 0], [0, 4, 0], [0, 5, 0], [0, 6, 0], [0, 7, 0], [0, 8, 0], [0, 9, 0]],
     'StadiumDecoTowerC': [[0, 0, 0], [0, 1, 0], [0, 2, 0], [0, 3, 0], [0, 4, 0], [0, 5, 0], [0, 6, 0], [0, 7, 0], [0, 8, 0], [0, 9, 0]]
 }
-
-def rotate(vec, rot):
-    if rot == 1:
-        r = np.array([[0, 1], [-1, 0]])
-    elif rot == 2:
-        r = np.array([[-1, 0], [0, -1]])
-    elif rot == 3:
-        r = np.array([[0, -1], [1, 0]])
-    else:
-        return vec
-
-    t = np.array([vec[0], vec[2]])
-    x, z = np.dot(t, r)
-    return [x, vec[1], z]
-
-def rotate_track(blocks, rotation):
-    for block in blocks:
-        rotated, _, _ = rotate_block_offsets([block.position, [0, 0, 0], [31, 0, 31]], rotation)
-        rotated = rotated[0]
-
-        try:
-            offsets = BLOCK_OFFSETS[block.name]
-            offsets, _, _ = rotate_block_offsets(offsets, block.rotation)
-            _, xoff, zoff = rotate_block_offsets(offsets, rotation)
-            block.position = (rotated[0] + xoff, rotated[1], rotated[2] + zoff)
-        except KeyError:
-            block.position = rotated
-
-        block.rotation = (block.rotation + rotation) % 4
-    
-    return blocks
-
-
-def rotate_track_tuples(tblocks, rotation):
-    blocks = []
-    for tup in tblocks:
-        block = MapBlock()
-        block.name = get_block_name(tup[BID])
-        block.rotation = tup[BROT]
-        block.position = [tup[BX], tup[BY], tup[BZ]]
-        blocks.append(block)
-    
-    return [block.to_tup() for block in rotate_track(blocks, rotation)]
-
-
-def rotate_block_offsets(offsets, rot):
-    rotated = [rotate(off, rot) for off in offsets]
-    max_x, max_z = 0, 0
-
-    def get_x(vec): return abs(vec[0])
-    def get_z(vec): return abs(vec[2])
-
-    if rot == 1:
-        max_x = max(rotated, key=get_x)[0]
-    elif rot == 2:
-        max_x = max(rotated, key=get_x)[0]
-        max_z = max(rotated, key=get_z)[2]
-    elif rot == 3:
-        max_z = max(rotated, key=get_z)[2]
-    else:
-        return rotated, 0, 0
-
-    return [[off[0] + abs(max_x), off[1], off[2] + abs(max_z)] for off in rotated], max_x, max_z
-
-def occupied_track_positions(track):
-    positions = []
-    for block in track:
-        name = get_block_name(block[BID])
-        if not name:
-            continue
-
-        try:
-            offsets = BLOCK_OFFSETS[name]
-        except KeyError:
-            continue
-
-        offsets, _, _ = rotate_block_offsets(offsets, block[BROT])
-        for offset in offsets:
-            positions.append([
-                block[BX] + offset[0],
-                block[BY] + offset[1],
-                block[BZ] + offset[2]
-            ])
-
-    return positions
-
-
-def intersects(track, block):
-    track_offsets = occupied_track_positions(track)
-    block_offsets = occupied_track_positions([block])
-
-    for block_off in block_offsets:
-        for track_off in track_offsets:
-            if block_off == track_off:
-                return True
-    return False
