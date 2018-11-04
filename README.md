@@ -44,6 +44,8 @@ Since we want to predict the next block in the sequence we ask the block model t
 The position model's output is two features: the vector to add to the position of last block to get a new position of the new block and the rotation of the new block.
 Their loss function is mean squared error and softmax respectively.
 
+![Visualization](/docs/TMTrackArch.png)
+
 ## Training
 It is recommended to have a dedicated GPU for training the nets, otherwise training process will be very slow.
 
