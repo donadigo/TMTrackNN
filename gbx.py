@@ -36,6 +36,7 @@ class Gbx(object):
         self.valid = self.magic == 'GBX'
         self.version = self.root_parser.read(2, 'H')
         self.classes = {}
+        self.root_classes = {}
         self.positions = {}
 
         self.root_parser.skip(3)
@@ -69,7 +70,7 @@ class Gbx(object):
         self.read_node(self.class_id, -1)
 
     def get_class_by_id(self, id):
-        for cl in self.classes.values():
+        for cl in list(self.classes.values()) + list(self.root_classes.values()):
             if cl.id == id:
                 return cl
 
@@ -108,7 +109,7 @@ class Gbx(object):
             game_class.track_name = self.root_parser.read_string()
             self.positions['track_name'] = self.root_parser.pop_info()
 
-            self.classes[cid] = game_class
+            self.root_classes[cid] = game_class
         else:
             self.root_parser.skip(size)
 
@@ -120,7 +121,7 @@ class Gbx(object):
         if class_id == GbxType.CHALLENGE:
             game_class = headers.CGameChallenge(class_id)
 
-        self.classes[class_id] = game_class
+        self.classes[depth] = game_class
 
         while True:
             oldcid = cid
