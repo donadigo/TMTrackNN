@@ -12,7 +12,7 @@ import argparse
 
 from config import NET_CONFIG
 from blocks import BLOCKS, BID, BX, BY, BZ, BROT, EMPTY_BLOCK, one_hot_bid, one_hot_pos, one_hot_rotation, pad_block_sequence
-from track_utils import rotate_track_tuples, fit_position_scaler
+from track_utils import rotate_track_tuples, fit_data_scaler, vectorize_track
 
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -43,7 +43,7 @@ train_data = pickle.load(train_data_file)
 if args.track_num:
     train_data = train_data[:args.track_num]
 
-scaler = fit_position_scaler(train_data)
+scaler = fit_data_scaler(train_data)
 
 
 def block_to_vec(block, encode_pos=True):
@@ -93,6 +93,7 @@ def track_sequence_generator(batch_size):
             entry = random.choice(train_data)
             r = random.randrange(0, 4)
             blocks = rotate_track_tuples(entry[1], r)
+            blocks = vectorize_track(blocks)
             process_entry(blocks, X, y_pos, y_rot)
 
         start = random.randrange(0, len(X) - batch_size + 1)

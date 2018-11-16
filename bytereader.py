@@ -49,14 +49,26 @@ class ByteReader(object):
     def get_bytes_generic(self, num_bytes):
         return self.data[self.pos:self.pos + num_bytes]
 
-    def read_uint32(self):
-        return self.read(4, 'I')
-
     def read_int32(self):
         return self.read(4, 'i')
 
+    def read_uint32(self):
+        return self.read(4, 'I')
+
+    def read_int16(self):
+        return self.read(2, 'h')
+
     def read_uint16(self):
         return self.read(2, 'H')
+
+    def read_int8(self):
+        return self.read(1, 'b')
+
+    def read_float(self):
+        return self.read(4, 'f')
+
+    def read_vec3(self):
+        return (self.read_float(), self.read_float(), self.read_float())
 
     def read_string(self):
         strlen = self.read_uint32()
@@ -77,7 +89,7 @@ class ByteReader(object):
     def skip(self, num_bytes):
         self.pos += num_bytes
 
-    def read_string_loopback(self):
+    def read_string_lookback(self):
         if not self.seen_loopback:
             self.read_uint32()
 

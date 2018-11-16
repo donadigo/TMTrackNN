@@ -23,7 +23,7 @@ from keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler
 
 from blocks import BID, BLOCKS, BROT, BX, BY, BZ
-from track_utils import fit_position_scaler
+from track_utils import fit_data_scaler
 from config import NET_CONFIG
 from builder import Builder
 from savegbx import save_gbx
@@ -40,7 +40,7 @@ train_data = pickle.load(train_data_file)
 pattern_data_file = open(NET_CONFIG['patterns_fname'], 'rb')
 pattern_data = pickle.load(pattern_data_file)
 
-scaler = fit_position_scaler(train_data)
+scaler = fit_data_scaler(train_data)
 
 
 def progress_callback(completed, total):
@@ -56,7 +56,7 @@ block_model = load_model(args.block_model)
 pos_model = load_model(args.pos_model)
 
 builder = Builder(block_model, pos_model,
-                     NET_CONFIG['lookback'], train_data, pattern_data, scaler, temperature=args.temperature)
+                  NET_CONFIG['lookback'], train_data, pattern_data, scaler, temperature=args.temperature)
 
 track = builder.build(args.length, verbose=False, save=False,
                       progress_callback=progress_callback)

@@ -4,8 +4,9 @@ import random
 import numpy as np
 
 import blocks as bl
-from track_utils import intersects, occupied_track_positions, rotate_track_tuples, dist
+from track_utils import intersects, occupied_track_vectors, rotate_track_tuples, dist
 from blocks import BID, BROT, BX, BY, BZ
+from tech_block_weights import TECH_BLOCK_WEIGHTS
 
 POS_LEN = 3
 ROTATE_LEN = 4
@@ -22,15 +23,15 @@ class Builder(object):
         self.inp_len = len(bl.BLOCKS) + POS_LEN + ROTATE_LEN
         self.temperature = temperature
         self.pattern_data = pattern_data
+        self.max_map_size = (32, 32, 32)
+        self.running = False
 
     @staticmethod
     def random_start_block():
         return (bl.START_LINE_BLOCK, 0, 0, 0, random.randrange(0, 4))
 
-    # Source:
-    # https://github.com/keras-team/keras/blob/master/examples/lstm_text_generation.py#L66
-    # Helper function to sample an index from a probability array
     def sample(self, preds):
+        # helper function to sample an index from a probability array
         preds = np.asarray(preds).astype('float64')
         preds = np.log(preds) / self.temperature
         exp_preds = np.exp(preds)
@@ -68,8 +69,7 @@ class Builder(object):
                     block[BROT])
         return d
 
-    @staticmethod
-    def unpack_position_preds_vector(preds):
+    def unpack_position_preds_vector(self, preds):
         pos_vec = [int(round(axis)) for axis in preds[0][0]]
         pos_rot = np.argmax(preds[1][0])
         return pos_vec, pos_rot
@@ -79,6 +79,7 @@ class Builder(object):
             next_block = block_override
         else:
             block_preds = self.block_model.predict(X_block)[0]
+            block_preds = block_preds * TECH_BLOCK_WEIGHTS
             block_preds = np.delete(
                 block_preds, [bid - 1 for bid in blacklist])
 
@@ -136,7 +137,7 @@ class Builder(object):
         return (X_block, X_position)
 
     def position_track(self, track):
-        occ = occupied_track_positions(track)
+        occ = occupied_track_vectors(track)
         min_x = min(occ, key=lambda pos: pos[0])[0]
         min_y = min(occ, key=lambda pos: pos[1])[1] - 1
         min_z = min(occ, key=lambda pos: pos[2])[2]
@@ -144,6 +145,13 @@ class Builder(object):
         max_x = max(occ, key=lambda pos: pos[0])[0]
         max_y = max(occ, key=lambda pos: pos[1])[1] - 1
         max_z = max(occ, key=lambda pos: pos[2])[2]
+
+        cx = 32 - (max_x - min_x + 1)
+        if cx > 0:
+            cx = random.randrange(0, cx)
+        cz = 32 - (max_z - min_z + 1)
+        if cz > 0:
+            cz = random.randrange(0, cz)
 
         min_x = 0 if min_x >= 0 else min_x
         min_y = 0 if min_y >= 0 else min_y
@@ -153,26 +161,44 @@ class Builder(object):
         max_y = 0 if max_y < 32 else max_y - 31
         max_z = 0 if max_z < 32 else max_z - 31
 
+        xoff = min_x - max_x
+        yoff = min_y - max_y
+        zoff = min_z - max_z
+
         p = []
         for block in track:
-            p.append((block[BID], block[BX] - min_x - max_x, block[BY] -
-                      min_y - max_y, block[BZ] - min_z - max_z, block[BROT]))
+            p.append((block[BID], block[BX] - xoff + cx, block[BY] -
+                      yoff, block[BZ] - zoff + cz, block[BROT]))
 
         return p
 
     def exceeds_map_size(self, track):
-        occ = occupied_track_positions(track)
+        occ = occupied_track_vectors(track)
         min_x = min(occ, key=lambda pos: pos[0])[0]
-        min_y = min(occ, key=lambda pos: pos[1])[1] - 1
+        min_y = min(occ, key=lambda pos: pos[1])[1]
         min_z = min(occ, key=lambda pos: pos[2])[2]
 
         max_x = max(occ, key=lambda pos: pos[0])[0]
-        max_y = max(occ, key=lambda pos: pos[1])[1] - 1
+        max_y = max(occ, key=lambda pos: pos[1])[1]
         max_z = max(occ, key=lambda pos: pos[2])[2]
 
-        return max_x - min_x > 32 or max_y - min_y > 32 or max_z - min_z > 32
+        return max_x - min_x + 1 > self.max_map_size[0] or max_y - min_y + 1 > self.max_map_size[1] or max_z - min_z + 1 > self.max_map_size[2]
+
+    def stop(self):
+        self.running = False
+
+    def get_y_locked(self):
+        for block in self.track:
+            if block[BID] in bl.GROUND_BLOCKS:
+                return True
+
+        return False
 
     def build(self, track_len, use_seed=False, failsafe=True, verbose=True, save=True, progress_callback=None):
+        self.running = True
+
+        # self.max_map_size = (random.randrange(
+        #     12, 32+1), random.randrange(5, 10), random.randrange(12, 32+1))
         if use_seed:
             self.track = self.sample_seed(3)
         else:
@@ -182,18 +208,21 @@ class Builder(object):
         end = False
         current_min_y = 0
         while len(self.track) < track_len:
-            if len(blacklist) >= 5 or (len(blacklist) == 1 and end):
+            if not self.running:
+                return None
+
+            if len(blacklist) >= 10 or (len(blacklist) == 1 and end):
                 if verbose:
                     print('More than 10 fails, going back.')
 
                 if end:
-                    back = 10
+                    back = 5
                 else:
                     back = random.randrange(1, 4)
-                # Remove some last blocks
-                for _ in range(back):
-                    if len(self.track) > 1:
-                        del self.track[-1]
+
+                end_idx = min(len(self.track) - 1, back)
+                if end_idx > 0:
+                    del self.track[-end_idx:len(self.track)]
 
                 end = False
                 blacklist = []
@@ -210,35 +239,42 @@ class Builder(object):
             decoded = self.decoded_track(
                 self.track + [next_block], start_pos=(0, 0, 0))
 
-            # Do not exceed map size
             if failsafe:
+                # Do not exceed map size
                 if self.exceeds_map_size(decoded):
                     blacklist.append(next_block[BID])
                     continue
 
                 if decoded[-1][BY] > current_min_y:
+                    # TODO: encode ground bit in the position network
                     if decoded[-1][BID] == 6 and decoded[-2][BID] == 6 and dist(decoded[-1][BX:BZ+1], decoded[-2][BX:BZ+1]) > 1:
                         blacklist.append(next_block[BID])
                         continue
 
+                    # Wants to put a ground block higher than ground
                     if next_block[BID] in bl.GROUND_BLOCKS:
-                        blacklist.append(next_block[BID])
+                        blacklist.extend(bl.GROUND_BLOCKS)
                         continue
 
                 if (intersects(decoded[:-1], decoded[-1]) or  # Overlaps the track
-                    (next_block[BID] in range(99, 104+1) or next_block[BID] in range(121, 126+1)) or
                         (next_block[BID] == bl.FINISH_LINE_BLOCK and not end)):  # Tries to put finish before desired track length
                     blacklist.append(next_block[BID])
                     continue
 
-                if self.score_prediction(self.track[-1], next_block) < 4:
+                if self.score_prediction(self.track[-1], next_block) < 5:
                     blacklist.append(next_block[BID])
                     continue
 
             blacklist = []
 
-            if decoded[-1][BY] < current_min_y:
-                current_min_y = decoded[-1][BY]
+            occ = occupied_track_vectors([decoded[-1]])
+            min_y_block = min(occ, key=lambda x: x[BY])[BY]
+            if min_y_block < current_min_y:
+                if self.get_y_locked():
+                    blacklist.append(next_block[BID])
+                    continue
+
+                current_min_y = min_y_block
 
             self.track.append(next_block)
             if len(self.track) >= track_len - 1:
@@ -252,5 +288,4 @@ class Builder(object):
 
         result_track = self.position_track(
             self.decoded_track(self.track, (0, 0, 0)))
-        pickle.dump(result_track, open('generated-track.bin', 'wb+'))
         return result_track

@@ -1,5 +1,5 @@
 import numpy as np
-from blocks import BID, BROT, BX, BY, BZ, get_block_name, is_start
+from blocks import BID, BROT, BX, BY, BZ, GROUND_BLOCKS, ROAD_BLOCKS, get_block_name, is_start
 from headers import MapBlock
 from block_offsets import BLOCK_OFFSETS
 from sklearn.preprocessing import MinMaxScaler
@@ -64,26 +64,27 @@ def get_cardinal_position(pos, rotation):
     return pos
 
 
-def populate_flags(track):
+def populate_flags(track, use_list=True):
     populated = []
     for i, block in enumerate(track):
-        occ = []
+        occ = {}
         if i > 0:
-            occ.extend(occupied_track_positions([track[i - 1]]))
+            occ.update(occupied_track_positions([track[i - 1]]))
         if i < len(track) - 1:
-            occ.extend(occupied_track_positions([track[i + 1]]))
+            occ.update(occupied_track_positions([track[i + 1]]))
 
         flags = 0
         if is_on_ground(block):
             flags |= 0x1000
 
-        # is road
-        if block[BID] == 6:
-            connections = []
+        if block[BID] in ROAD_BLOCKS:
+            connections = set()
             for rotation in range(4):
                 pos = get_cardinal_position(list(block[BX:BZ+1]), rotation)
-                if pos in occ:
-                    connections.append(rotation)
+
+                for neighbour, offsets in occ.items():
+                    if pos in offsets and not neighbour[BID] in GROUND_BLOCKS:
+                        connections.add(rotation)
 
             cnum = len(connections)
             if cnum == 0:
@@ -139,7 +140,7 @@ def rotate_block_offsets(offsets, rot):
 
 
 def occupied_track_positions(track):
-    positions = []
+    positions = {}
     for block in track:
         name = get_block_name(block[BID])
         if not name:
@@ -151,19 +152,31 @@ def occupied_track_positions(track):
             continue
 
         offsets, _, _ = rotate_block_offsets(offsets, block[BROT])
+        block_positions = []
         for offset in offsets:
-            positions.append([
+            block_positions.append([
                 block[BX] + offset[0],
                 block[BY] + offset[1],
                 block[BZ] + offset[2]
             ])
 
+        positions[block] = block_positions
+
     return positions
 
 
+def occupied_track_vectors(track):
+    occ = occupied_track_positions(track)
+    vectors = []
+    for p in list(occ.values()):
+        vectors.extend(p)
+
+    return vectors
+
+
 def intersects(track, block):
-    track_offsets = occupied_track_positions(track)
-    block_offsets = occupied_track_positions([block])
+    track_offsets = occupied_track_vectors(track)
+    block_offsets = occupied_track_vectors([block])
 
     for block_off in block_offsets:
         for track_off in track_offsets:
@@ -283,30 +296,38 @@ def track_sort(track):
     return s
 
 
-def fit_position_scaler(train_data):
+def fit_data_scaler(train_data):
     scaler = MinMaxScaler()
-    X = [[0, 0, 0]]
+    X = []
 
-    for i, entry in enumerate(train_data):
-        track = entry[1]
-        for j in range(len(track) - 1, -1, -1):
-            current = track[j]
-            prev = track[j - 1]
-
-            X.append([
-                current[BX] - prev[BX],
-                current[BY] - prev[BY],
-                current[BZ] - prev[BZ]
-            ])
-
-            train_data[i][1][j] = (current[BID], X[-1][0],
-                                   X[-1][1], X[-1][2], current[BROT])
-
-        block = track[0]
-        train_data[i][1][0] = (block[BID], 0, 0, 0, block[BROT])
+    for entry in train_data:
+        v = vectorize_track(entry[1])
+        for block in v:
+            X.append(block[BX:BZ+1])
 
     scaler.fit(X)
     return scaler
+
+
+def vectorize_track(track):
+    v = track[:]
+    X = []
+    for i in range(len(track) - 1, -1, -1):
+        current = track[i]
+        prev = track[i - 1]
+
+        X.append([
+            current[BX] - prev[BX],
+            current[BY] - prev[BY],
+            current[BZ] - prev[BZ]
+        ])
+
+        v[i] = (current[BID], X[-1][0],
+                X[-1][1], X[-1][2], current[BROT])
+
+    block = track[0]
+    v[0] = (block[BID], 0, 0, 0, block[BROT])
+    return v
 
 
 def create_pattern_data(train_data):

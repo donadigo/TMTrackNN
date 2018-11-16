@@ -361,7 +361,9 @@ BLOCKS = {
 
     # 'StadiumRoadDirtHighToRoad': 358,
     # 'StadiumDirtHill': 359,
-    # 'StadiumPlatformBiSlope2StartSmall': 360
+    # 'StadiumPlatformBiSlope2StartSmall': 360,
+    # 'StadiumWaterClip': 361,
+    # 'StadiumDirtClip': 362
 }
 
 # TODO: needs a separate dict / list for TM2 Stadium
@@ -711,10 +713,12 @@ def is_multilap(name):
 
 BID, BX, BY, BZ, BROT, BFLAGS = range(6)
 EMPTY_BLOCK = (0, 0, 0, 0, 0)
-BASE_BLOCKS = list(range(6, 97+1)) + \
-    list(range(105, 186+1)) + list(range(196, 233+1))
-GROUND_BLOCKS = [20] + list(range(196, 233+1))
+BASE_BLOCKS = list(range(6, 98+1)) + \
+    list(range(105, 120+1)) + list(range(127, 224+1)) + list(range(227, 233+1))
+GROUND_BLOCKS = [20] + list(range(196, 233+1)) + \
+    list(range(253, 263+1)) + list(range(272, 277+1)) + list(range(287, 292+1))
 TRANSITION_BLOCKS = [130, 214, 215]
+ROAD_BLOCKS = [6, 198, 264, 265, 266, 270, 271]
 START_LINE_BLOCK = BLOCKS['StadiumRoadMainStartLine']
 FINISH_LINE_BLOCK = BLOCKS['StadiumRoadMainFinishLine']
 MULTILAP_LINE_BLOCK = BLOCKS['StadiumRoadMainStartFinishLine']

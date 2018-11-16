@@ -9,6 +9,7 @@ import gbx
 import lzo
 from track_utils import populate_flags, rotate_track
 from blocks import BID, BROT, BX, BY, BZ
+import random
 
 
 class Action(Enum):
@@ -31,6 +32,9 @@ CURRENT_VER = 3
 BASE_LBS_IDX = 0b1000000000000000000000000000000
 
 GROUND_FLAG = 1 << 12
+
+MOODS = ['Sunrise', 'Day', 'Sunset', 'Night']
+MOOD_WEIGHTS = [0.3, 0.5, 0.1, 0.1]
 
 
 def append_to_store(stored_strings, s):
@@ -98,6 +102,8 @@ def rotate_track_challenge(challenge, rotation):
         rotation = block.rotation
         position = block.position
 
+        if not bid in bl.BASE_BLOCKS:
+            continue
         track.append(
             (bid, position[0], position[1], position[2], rotation, block.flags))
 
@@ -160,13 +166,25 @@ def save_gbx(options, template, output):
         udata = data_replace(udata, blocks_chunk_str,
                              info.pos, info.size)
 
+    # The mood
+    # info = temp_gbx.positions['mood']
+    # if info.valid:
+    #     mood = random.choices(MOODS, MOOD_WEIGHTS)[0]
+    #     print(mood)
+    #     udata = data_replace(udata, write_lookback_string(
+    #         stored_strings, seen_lookback, mood), info.pos, info.size)
+
     # Map name in editor
-    map_name = get_map_name(output)
+    if 'map_name' in options:
+        map_name = options['map_name']
+    else:
+        map_name = get_map_name(output)
     map_name_str = bytearray()
     map_name_str += struct.pack('I', len(map_name))
     map_name_str += struct.pack(str(len(map_name)) +
                                 's', bytes(map_name, 'utf-8'))
 
+    # The map name
     info = temp_gbx.positions['map_name']
     if info.valid:
         udata = data_replace(udata, map_name_str, info.pos, info.size)

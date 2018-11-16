@@ -72,3 +72,39 @@ class CGameCommon(CGameHeader):
     def __init__(self, id):
         self.id = id
         self.track_name = None
+
+
+class CGameReplayRecord(CGameCommon):
+    def __init__(self, id):
+        self.id = id
+        self.track = None
+        self.ghosts = []
+
+
+class CGameGhost(object):
+    def __init__(self, id):
+        self.id = id
+        self.records = []
+
+
+class CGameCtnGhost(CGameGhost):
+    def __init__(self, id):
+        self.id = id
+        self.race_time = 0
+        self.num_respawns = 0
+        self.light_trail_color = (0, 0, 0)
+        self.stunts_score = 0
+        self.uid = None
+        self.login = None
+        super(CGameCtnGhost, self).__init__(id)
+
+
+class GhostSampleRecord(object):
+    def __init__(self, position, angle, axis_heading, axis_pitch, speed, vel_heading, vel_pitch):
+        self.position = position
+        self.angle = angle
+        self.axis_heading = axis_heading
+        self.axis_pitch = axis_pitch
+        self.speed = speed
+        self.vel_heading = vel_heading
+        self.vel_pitch = vel_pitch
