@@ -30,8 +30,10 @@ class Builder(object):
     def random_start_block():
         return (bl.START_LINE_BLOCK, 0, 0, 0, random.randrange(0, 4))
 
+    # Source:
+    # https://github.com/keras-team/keras/blob/master/examples/lstm_text_generation.py#L66
+    # Helper function to sample an index from a probability array
     def sample(self, preds):
-        # helper function to sample an index from a probability array
         preds = np.asarray(preds).astype('float64')
         preds = np.log(preds) / self.temperature
         exp_preds = np.exp(preds)
