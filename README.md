@@ -18,12 +18,12 @@ This will generate a track using the provided block and position models that wil
 * Keras
 * python-lzo (through pip)
 * numpy
-* Not required: Gtk+3 and GLib for track visualization
+* Not required: pygame or Gtk+3 and GLib for track visualization
 
 ## Dataset
 This repo doesn't contain the dataset itself used to train the models in the `models/` directory as it is unusual to provide entire datasets with code in one repo. There is however a preprocessed version of the dataset used in the `data/train_data.pkl` file that you can use for futher training.
 
-The file contains roughly 3000 tech tracks downloaded directly from [TMX](https://tmnforever.tm-exchange.com/) and preprocessed such that they contain only the simplified version of tracks of each map. The maps themselves were downloaded using these filters: style: tech, order: awards (most), length: ~= 1m.
+The file contains roughly 3000 tech tracks downloaded directly from [TMX](https://tmnforever.tm-exchange.com/) and preprocessed such that they contain only the simplified version of tracks of each map. The maps themselves were downloaded using these filters: type: tech, order: awards (most), length: ~= 1m.
 
 ## Neural Network Architecture
 We can represent a track as a sequence of block placements. Each block consists of 3 main features:
@@ -44,6 +44,8 @@ Since we want to predict the next block in the sequence we ask the block model t
 The position model's output is two features: the vector to add to the position of last block to get a new position of the new block and the rotation of the new block.
 Their loss function is mean squared error and softmax respectively.
 
+![Visualization](/docs/TMTrackArch.png)
+
 ## Training
 It is recommended to have a dedicated GPU for training the nets, otherwise training process will be very slow.
 
@@ -54,7 +56,7 @@ python3 -i train_blocks.py -g -l models/block_model_300_300.h5
 
 To train the position net with the trained model in the `models/` directory:
 ```sh
-python3 -i train_pos.py -g -l models/position_model_1024_512.h5
+python3 -i train_pos.py -g -l models/position_model_512_256_256.h5
 ```
 
 Invoking either `train_blocks.py` or `train_pos.py` with the `-l` option will automatically 
