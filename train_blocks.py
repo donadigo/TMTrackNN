@@ -78,11 +78,11 @@ def track_sequence_generator(batch_size):
 def build_model():
     model = Sequential()
 
-    model.add(Bidirectional(LSTM(200, return_sequences=True),
-                            input_shape=(lookback, len(BLOCKS))))
+    model.add(LSTM(300, input_shape=(
+        lookback, len(BLOCKS)), return_sequences=True))
     model.add(Dropout(0.2))
 
-    model.add(Bidirectional(LSTM(150)))
+    model.add(LSTM(300))
     model.add(Dropout(0.2))
 
     model.add(Dense(len(BLOCKS), activation='softmax'))
@@ -124,7 +124,11 @@ gen = track_sequence_generator(batch_size)
 
 callbacks = []
 if args.model_filename:
-    model = load_model(args.model_filename)
+    if os.path.exists(args.model_filename):
+        model = load_model(args.model_filename)
+    else:
+        model = build_model()
+
     callbacks.append(ModelCheckpoint(filepath=args.model_filename,
                                      monitor='loss', verbose=1, save_best_only=True, mode='min'))
 else:

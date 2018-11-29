@@ -1,7 +1,7 @@
 import numpy as np
-from blocks import BID, BROT, BX, BY, BZ, GROUND_BLOCKS, ROAD_BLOCKS, get_block_name, is_start
+from blocks import BID, BROT, BX, BY, BZ, BFLAGS, GROUND_BLOCKS, ROAD_BLOCKS, get_block_name, is_start, CONNECT_MAP
 from headers import MapBlock
-from block_offsets import BLOCK_OFFSETS
+from block_offsets import BLOCK_OFFSETS, DYNAMIC_GROUND_OFFSETS
 from sklearn.preprocessing import MinMaxScaler
 
 
@@ -42,10 +42,7 @@ def rotate_track(blocks, rotation):
 def rotate_track_tuples(tblocks, rotation):
     blocks = []
     for tup in tblocks:
-        block = MapBlock()
-        block.name = get_block_name(tup[BID])
-        block.rotation = tup[BROT]
-        block.position = [tup[BX], tup[BY], tup[BZ]]
+        block = MapBlock.from_tup(tup)
         blocks.append(block)
 
     return [block.to_tup() for block in rotate_track(blocks, rotation)]
@@ -77,13 +74,14 @@ def populate_flags(track, use_list=True):
         if is_on_ground(block):
             flags |= 0x1000
 
-        if block[BID] in ROAD_BLOCKS:
+        if block[BID] in CONNECT_MAP:
             connections = set()
+            candidates = CONNECT_MAP[block[BID]]
             for rotation in range(4):
                 pos = get_cardinal_position(list(block[BX:BZ+1]), rotation)
 
                 for neighbour, offsets in occ.items():
-                    if pos in offsets and not neighbour[BID] in GROUND_BLOCKS:
+                    if pos in offsets and neighbour[BID] in candidates:
                         connections.add(rotation)
 
             cnum = len(connections)
@@ -147,7 +145,10 @@ def occupied_track_positions(track):
             continue
 
         try:
-            offsets = BLOCK_OFFSETS[name]
+            if is_on_ground(block) and name in DYNAMIC_GROUND_OFFSETS:
+                offsets = DYNAMIC_GROUND_OFFSETS[name]
+            else:
+                offsets = BLOCK_OFFSETS[name]
         except KeyError:
             continue
 
@@ -191,111 +192,6 @@ def dist(x, y):
     return np.sqrt(np.sum((x-y) ** 2))
 
 
-def track_sort(track):
-    def occupied(track):
-        positions = []
-        for block in track:
-            name = get_block_name(block[BID])
-            if not name:
-                continue
-
-            try:
-                offsets = BLOCK_OFFSETS[name]
-            except KeyError:
-                continue
-
-            offsets, _, _ = rotate_block_offsets(offsets, block[BROT])
-            block_positions = []
-            for offset in offsets:
-                block_positions.append([
-                    block[BX] + offset[0],
-                    block[BY] + offset[1],
-                    block[BZ] + offset[2]
-                ])
-
-            positions.append(block_positions)
-
-        return positions
-
-    def get_at_pos(track, pos):
-        for block in track:
-            if list(block[BX:BZ+1]) == pos:
-                return block
-        return None
-
-    occupied = occupied(track)
-
-    start_block = None
-    for block in track:
-        if is_start(get_block_name(block[BID])):
-            start_block = block
-            break
-
-    if not start_block:
-        return []
-
-    queue = track[:]
-    queue.remove(start_block)
-
-    current_pos = list(start_block[BX:BZ+1])
-    s = [start_block]
-
-    for i, block_positions in enumerate(occupied):
-        for j, pos in enumerate(block_positions):
-            if pos == current_pos:
-                del occupied[i]
-
-    while len(queue) > 0 and len(occupied) > 0:
-        current = get_at_pos(track, current_pos)
-        if current and current[BID] == 6:
-            if current[BROT] == 0:
-                neighbour = get_at_pos(
-                    queue, [current_pos[0], current_pos[1], current_pos[2] + 1])
-            elif current[BROT] == 1:
-                neighbour = get_at_pos(
-                    queue, [current_pos[0] - 1, current_pos[1], current_pos[2]])
-            elif current[BROT] == 2:
-                neighbour = get_at_pos(
-                    queue, [current_pos[0], current_pos[1], current_pos[2] - 1])
-            elif current[BROT] == 3:
-                neighbour = get_at_pos(
-                    queue, [current_pos[0] + 1, current_pos[1], current_pos[2]])
-
-            if neighbour:
-                current_pos = list(neighbour[BX:BZ+1])
-                try:
-                    index = queue.index(
-                        (current[0], neighbour[0], neighbour[1], neighbour[2], current[4]))
-                    s.append(queue.pop(index))
-                    del occupied[index]
-                    continue
-                except ValueError:
-                    pass
-
-        m = 1000
-        cindex = (0, 0)
-        for i, block_positions in enumerate(occupied):
-            for j, pos in enumerate(block_positions):
-                d = dist(pos, current_pos)
-                if d < m:
-                    m = d
-                    cindex = (i, j)
-
-        m = 0
-        findex = cindex
-        for j, pos in enumerate(occupied[cindex[0]]):
-            d = dist(pos, current_pos)
-            if d > m:
-                m = d
-                findex = (cindex[0], j)
-
-        s.append(queue.pop(cindex[0]))
-
-        current_pos = occupied[findex[0]][findex[1]]
-        del occupied[cindex[0]]
-    return s
-
-
 def fit_data_scaler(train_data):
     scaler = MinMaxScaler()
     X = []
@@ -323,10 +219,10 @@ def vectorize_track(track):
         ])
 
         v[i] = (current[BID], X[-1][0],
-                X[-1][1], X[-1][2], current[BROT])
+                X[-1][1], X[-1][2], current[BROT], current[BFLAGS])
 
     block = track[0]
-    v[0] = (block[BID], 0, 0, 0, block[BROT])
+    v[0] = (block[BID], 0, 0, 0, block[BROT], block[BFLAGS])
     return v
 
 
@@ -336,7 +232,6 @@ def create_pattern_data(train_data):
         track = entry[1]
         for i in range(1, len(track) - 1):
             prev = track[i - 1]
-            prev = (prev[BID], 0, 0, 0, prev[BROT])
             n = track[i]
 
             rotated = rotate_track_tuples([prev, n], (4 - prev[BROT]) % 4)
@@ -346,7 +241,7 @@ def create_pattern_data(train_data):
             n = (n[BID], n[BX] - prev[BX], n[BY] -
                  prev[BY], n[BZ] - prev[BZ], n[BROT])
 
-            prev = (prev[BID], 0, 0, 0, prev[BROT])
+            prev = prev[BID]
 
             if not (prev, n) in patterns:
                 patterns[(prev, n)] = 1

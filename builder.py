@@ -4,8 +4,8 @@ import random
 import numpy as np
 
 import blocks as bl
-from track_utils import intersects, occupied_track_vectors, rotate_track_tuples, dist
-from blocks import BID, BROT, BX, BY, BZ
+from track_utils import intersects, occupied_track_vectors, rotate_track_tuples, dist, is_on_ground, vectorize_track
+from blocks import BLOCKS, BID, BROT, BX, BY, BZ, BFLAGS
 from tech_block_weights import TECH_BLOCK_WEIGHTS
 
 POS_LEN = 3
@@ -28,7 +28,7 @@ class Builder(object):
 
     @staticmethod
     def random_start_block():
-        return (bl.START_LINE_BLOCK, 0, 0, 0, random.randrange(0, 4))
+        return (bl.START_LINE_BLOCK, 0, 0, 0, random.randrange(0, 4), 0)
 
     # Source:
     # https://github.com/keras-team/keras/blob/master/examples/lstm_text_generation.py#L66
@@ -58,7 +58,7 @@ class Builder(object):
 
     @staticmethod
     def decoded_track(track, start_pos=(0, 0, 0)):
-        d = track
+        d = track[:]
         d[0] = (d[0][BID], start_pos[0], start_pos[1],
                 start_pos[2], d[0][BROT])
         for i in range(1, len(d)):
@@ -76,14 +76,16 @@ class Builder(object):
         pos_rot = np.argmax(preds[1][0])
         return pos_vec, pos_rot
 
-    def predict_next_block(self, X_block, X_position, block_override=-1, blacklist=[]):
+    def predict_next_block(self, X_block, X_position, block_override=-1, blacklist=[], block_preds=None):
         if block_override != -1:
             next_block = block_override
         else:
-            block_preds = self.block_model.predict(X_block)[0]
-            block_preds = block_preds * TECH_BLOCK_WEIGHTS
-            block_preds = np.delete(
-                block_preds, [bid - 1 for bid in blacklist])
+            if block_preds is None:
+                block_preds = self.block_model.predict(X_block)[0]
+                block_preds = block_preds * TECH_BLOCK_WEIGHTS
+
+            for bid in blacklist:
+                block_preds[bid - 1] = 0
 
             next_block = self.sample(block_preds) + 1
 
@@ -94,8 +96,9 @@ class Builder(object):
                                               (next_block, 0, 0, 0, 0), self.scaler, False)
 
         pos_preds = self.position_model.predict(X_position)
-        pos_vec, pos_rot = self.unpack_position_preds_vector(pos_preds)
-        return (next_block, pos_vec[0], pos_vec[1], pos_vec[2], pos_rot)
+        pos_vec, pos_rot = self.unpack_position_preds_vector(
+            pos_preds)
+        return (next_block, pos_vec[0], pos_vec[1], pos_vec[2], pos_rot), block_preds
 
     def sample_seed(self, seed_len):
         seed_idx = random.randrange(0, len(self.seed_data))
@@ -112,8 +115,7 @@ class Builder(object):
         next_block = (next_block[BID], next_block[BX] - prev_block[BX], next_block[BY] -
                       prev_block[BY], next_block[BZ] - prev_block[BZ], next_block[BROT])
 
-        prev_block = (prev_block[BID], 0, 0, 0, prev_block[BROT])
-
+        prev_block = prev_block[BID]
         target = (prev_block, next_block)
         try:
             return self.pattern_data[target]
@@ -150,10 +152,10 @@ class Builder(object):
 
         cx = 32 - (max_x - min_x + 1)
         if cx > 0:
-            cx = random.randrange(0, cx)
+            cx = int(cx / 2)
         cz = 32 - (max_z - min_z + 1)
         if cz > 0:
-            cz = random.randrange(0, cz)
+            cz = int(cz / 2)
 
         min_x = 0 if min_x >= 0 else min_x
         min_y = 0 if min_y >= 0 else min_y
@@ -164,13 +166,12 @@ class Builder(object):
         max_z = 0 if max_z < 32 else max_z - 31
 
         xoff = min_x - max_x
-        yoff = min_y - max_y
         zoff = min_z - max_z
 
         p = []
         for block in track:
-            p.append((block[BID], block[BX] - xoff + cx, block[BY] -
-                      yoff, block[BZ] - zoff + cz, block[BROT]))
+            p.append((block[BID], block[BX] - xoff + cx, block[BY],
+                      block[BZ] - zoff + cz, block[BROT]))
 
         return p
 
@@ -184,31 +185,25 @@ class Builder(object):
         max_y = max(occ, key=lambda pos: pos[1])[1]
         max_z = max(occ, key=lambda pos: pos[2])[2]
 
-        return max_x - min_x + 1 > self.max_map_size[0] or max_y - min_y + 1 > self.max_map_size[1] or max_z - min_z + 1 > self.max_map_size[2]
+        return max_x - min_x + 1 > self.max_map_size[0] or max_y - min_y + 1 > self.max_map_size[1] or max_z - min_z + 1 > self.max_map_size[2] or min_y < 1
 
     def stop(self):
         self.running = False
 
-    def get_y_locked(self):
-        for block in self.track:
-            if block[BID] in bl.GROUND_BLOCKS:
-                return True
-
-        return False
-
     def build(self, track_len, use_seed=False, failsafe=True, verbose=True, save=True, progress_callback=None):
         self.running = True
 
-        # self.max_map_size = (random.randrange(
-        #     12, 32+1), random.randrange(5, 10), random.randrange(12, 32+1))
-        if use_seed:
+        self.max_map_size = (20, 8, 20)
+        if use_seed and self.seed_data:
             self.track = self.sample_seed(3)
         else:
             self.track = [self.random_start_block()]
 
+        fixed_y = random.randrange(1, 5)
+
         blacklist = []
         end = False
-        current_min_y = 0
+        current_block_preds = None
         while len(self.track) < track_len:
             if not self.running:
                 return None
@@ -217,10 +212,12 @@ class Builder(object):
                 if verbose:
                     print('More than 10 fails, going back.')
 
-                if end:
+                if len(self.track) > track_len - 5:
                     back = 5
+                elif end:
+                    back = 10
                 else:
-                    back = random.randrange(1, 4)
+                    back = random.randrange(2, 6)
 
                 end_idx = min(len(self.track) - 1, back)
                 if end_idx > 0:
@@ -228,6 +225,7 @@ class Builder(object):
 
                 end = False
                 blacklist = []
+                current_block_preds = None
 
             X_block, X_position = self.prepare_inputs()
 
@@ -235,11 +233,11 @@ class Builder(object):
             if end:
                 override_block = bl.FINISH_LINE_BLOCK
 
-            next_block = self.predict_next_block(
-                X_block[:], X_position[:], override_block, blacklist=blacklist)
+            next_block, current_block_preds = self.predict_next_block(
+                X_block[:], X_position[:], override_block, blacklist=blacklist, block_preds=current_block_preds)
 
             decoded = self.decoded_track(
-                self.track + [next_block], start_pos=(0, 0, 0))
+                self.track + [next_block], start_pos=(0, fixed_y, 0))
 
             if failsafe:
                 # Do not exceed map size
@@ -247,13 +245,18 @@ class Builder(object):
                     blacklist.append(next_block[BID])
                     continue
 
-                if decoded[-1][BY] > current_min_y:
-                    # TODO: encode ground bit in the position network
-                    if decoded[-1][BID] == 6 and decoded[-2][BID] == 6 and dist(decoded[-1][BX:BZ+1], decoded[-2][BX:BZ+1]) > 1:
+                occ = occupied_track_vectors([decoded[-1]])
+                if len(occ) > 0:
+                    min_y_block = min(occ, key=lambda x: x[1])[1]
+                else:
+                    min_y_block = decoded[-1][BY]
+
+                # If we are above the ground
+                if min_y_block > 1:
+                    if next_block[BID] == BLOCKS['StadiumGrass']:
                         blacklist.append(next_block[BID])
                         continue
 
-                    # Wants to put a ground block higher than ground
                     if next_block[BID] in bl.GROUND_BLOCKS:
                         blacklist.extend(bl.GROUND_BLOCKS)
                         continue
@@ -268,16 +271,10 @@ class Builder(object):
                     continue
 
             blacklist = []
+            current_block_preds = None
 
-            occ = occupied_track_vectors([decoded[-1]])
-            min_y_block = min(occ, key=lambda x: x[BY])[BY]
-            if min_y_block < current_min_y:
-                if self.get_y_locked():
-                    blacklist.append(next_block[BID])
-                    continue
-
-                current_min_y = min_y_block
-
+            next_block = (next_block[BID], next_block[BX], next_block[BY],
+                          next_block[BZ], next_block[BROT])
             self.track.append(next_block)
             if len(self.track) >= track_len - 1:
                 end = True
@@ -289,5 +286,8 @@ class Builder(object):
                 print(len(self.track))
 
         result_track = self.position_track(
-            self.decoded_track(self.track, (0, 0, 0)))
+            self.decoded_track(self.track, (0, fixed_y, 0)))
+
+        result_track = [
+            block for block in result_track if block[BID] != BLOCKS['StadiumGrass']]
         return result_track

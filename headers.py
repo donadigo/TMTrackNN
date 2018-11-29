@@ -1,9 +1,22 @@
-from blocks import BLOCKS
+from blocks import BLOCKS, BID, BX, BY, BZ, BROT, BFLAGS, get_block_name
 
 
 class CGameHeader(object):
     def __init__(self, id):
         self.id = id
+
+
+class CGameCtnCollectorList(object):
+    def __init__(self, id):
+        self.id = id
+        self.stocks = []
+
+
+class CollectorStock(object):
+    def __init__(self, block_name, collection, author):
+        self.block_name = block_name
+        self.collection = collection
+        self.author = author
 
 
 class MapBlock(object):
@@ -18,6 +31,16 @@ class MapBlock(object):
 
         return 0
 
+    @staticmethod
+    def from_tup(tup):
+        block = MapBlock()
+        block.name = get_block_name(tup[BID])
+        block.rotation = tup[BROT]
+        block.position = [tup[BX], tup[BY], tup[BZ]]
+        if len(tup) > 5:
+            block.flags = 0x1000 if tup[BFLAGS] == 1 else 0
+        return block
+
     def __init__(self):
         self.name = None
         self.rotation = 0
@@ -28,7 +51,7 @@ class MapBlock(object):
         self.skin = 0
 
     # 0b1000000000000
-    # (flags & 0x1000) != 0     is on ground
+    # (flags & 0x1000) != 0     is on terrain
     # (flags & 0x1) != 0        connected once with another RoadMain
     # (flags & 0x2) != 0        connected twice with blocks (curve line)
     # (flags & 0x3) != 0        connected twice with blocks (straight line)
@@ -46,7 +69,8 @@ class MapBlock(object):
 
     def to_tup(self):
         try:
-            return (BLOCKS[self.name], self.position[0], self.position[1], self.position[2], self.rotation)
+            terrain_bit = 1 if (self.flags & 0x1000 != 0) else 0
+            return (BLOCKS[self.name], self.position[0], self.position[1], self.position[2], self.rotation, terrain_bit)
         except KeyError:
             return None
 
@@ -66,6 +90,26 @@ class CGameChallenge(CGameHeader):
         self.flags = 0
         self.req_unlock = 0
         self.blocks = []
+        self.items = []
+
+
+class CGameBlockItem(CGameHeader):
+    def __init__(self):
+        self.id = id
+        self.path = None
+        self.collection = None
+        self.author = None
+        self.waypoint = None
+        self.position = (0, 0, 0)
+        self.rotation = 0.0
+
+
+class CGameWaypointSpecialProperty(CGameHeader):
+    def __init__(self, id):
+        self.id = id
+        self.tag = None
+        self.spawn = 0
+        self.order = 0
 
 
 class CGameCommon(CGameHeader):
@@ -100,6 +144,9 @@ class CGameCtnGhost(CGameGhost):
 
 
 class GhostSampleRecord(object):
+    BLOCK_SIZE_XZ = 32
+    BLOCK_SIZE_Y = 8
+
     def __init__(self, position, angle, axis_heading, axis_pitch, speed, vel_heading, vel_pitch):
         self.position = position
         self.angle = angle
@@ -108,3 +155,9 @@ class GhostSampleRecord(object):
         self.speed = speed
         self.vel_heading = vel_heading
         self.vel_pitch = vel_pitch
+
+    def get_block_position(self, xoff=0, zoff=0):
+        x = int((self.position[0] + xoff) / self.BLOCK_SIZE_XZ)
+        y = int((self.position[1]) / self.BLOCK_SIZE_Y)
+        z = int((self.position[2] + zoff) / self.BLOCK_SIZE_XZ)
+        return [x, y, z]

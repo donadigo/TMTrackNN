@@ -359,11 +359,13 @@ BLOCKS = {
     'StadiumDecoTowerTowerD': 356,
     'StadiumDecoTowerTowerC': 357,
 
-    # 'StadiumRoadDirtHighToRoad': 358,
-    # 'StadiumDirtHill': 359,
-    # 'StadiumPlatformBiSlope2StartSmall': 360,
-    # 'StadiumWaterClip': 361,
-    # 'StadiumDirtClip': 362
+    # TODO: sort this out
+    'StadiumRoadDirtHighToRoad': 358,
+    'StadiumDirtHill': 359,
+    'StadiumPlatformBiSlope2StartSmall': 360,
+    'StadiumWaterClip': 361,
+    'StadiumDirtClip': 362,
+    'StadiumGrass': 363
 }
 
 # TODO: needs a separate dict / list for TM2 Stadium
@@ -719,6 +721,17 @@ GROUND_BLOCKS = [20] + list(range(196, 233+1)) + \
     list(range(253, 263+1)) + list(range(272, 277+1)) + list(range(287, 292+1))
 TRANSITION_BLOCKS = [130, 214, 215]
 ROAD_BLOCKS = [6, 198, 264, 265, 266, 270, 271]
+
+CONNECT_MAP = {
+    6: list(range(6, 93+1)) + [127, 128, 129, 130, 214, 215],
+    198: list(range(196, 233+1)),
+    264: list(range(264, 269+1)),
+    265: list(range(264, 269+1)),
+    266: list(range(264, 269+1)),
+    270: [270, 271],
+    271: [270, 271]
+}
+
 START_LINE_BLOCK = BLOCKS['StadiumRoadMainStartLine']
 FINISH_LINE_BLOCK = BLOCKS['StadiumRoadMainFinishLine']
 MULTILAP_LINE_BLOCK = BLOCKS['StadiumRoadMainStartFinishLine']

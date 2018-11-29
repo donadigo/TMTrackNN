@@ -124,7 +124,5 @@ class ByteReader(object):
 
         inp &= 0x3fffffff
         if inp - 1 >= len(self.stored_strings):
-            logging.debug(
-                'String not found in list with index: {}'.format(bin(inp)))
             return ''
         return self.stored_strings[inp - 1]

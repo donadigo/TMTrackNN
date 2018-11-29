@@ -41,6 +41,10 @@ import numpy as np
 # }
 
 BLOCK_OFFSETS = {
+    'StadiumGrass': [[0, 0, 0]],
+    'StadiumDirt': [[0, 0, 0]],
+    'StadiumDirtHill': [[0, 0, 0], [0, 1, 0]],
+    'StadiumDirtBorder': [[0, 0, 0]],
     'StadiumRoadMain': [[0, 0, 0]],
     'StadiumRoadMainGTCurve2': [[0, 0, 0], [1, 0, 0], [0, 0, 1], [1, 0, 1]],
     'StadiumRoadMainGTCurve3': [[0, 0, 0], [0, 0, 1], [1, 0, 0], [1, 0, 1], [1, 0, 2], [2, 0, 0], [2, 0, 1], [2, 0, 2]],
@@ -427,4 +431,10 @@ BLOCK_OFFSETS = {
     'StadiumDecoTowerB': [[0, 0, 0], [0, 1, 0], [0, 2, 0], [0, 3, 0], [0, 4, 0], [0, 5, 0], [0, 6, 0], [0, 7, 0], [0, 8, 0], [0, 9, 0]],
     'StadiumDecoTowerD': [[0, 0, 0], [0, 1, 0], [0, 2, 0], [0, 3, 0], [0, 4, 0], [0, 5, 0], [0, 6, 0], [0, 7, 0], [0, 8, 0], [0, 9, 0]],
     'StadiumDecoTowerC': [[0, 0, 0], [0, 1, 0], [0, 2, 0], [0, 3, 0], [0, 4, 0], [0, 5, 0], [0, 6, 0], [0, 7, 0], [0, 8, 0], [0, 9, 0]]
+}
+
+DYNAMIC_GROUND_OFFSETS = {
+    'StadiumFabricPillarCornerOut': [[0, 0, 0]],
+    'StadiumFabricPillarCornerInAir': [[0, 0, 1], [1, 0, 0], [1, 0, 1]],
+    'StadiumFabricPillarAir': [[0, 0, 0]]
 }

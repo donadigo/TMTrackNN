@@ -3,17 +3,25 @@ import pickle
 import sys
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QPoint
-from PyQt5.QtGui import QIntValidator
+from PyQt5.QtGui import QIntValidator, QIcon
 from PyQt5.QtWidgets import *
-
-from builder import Builder
-from config import NET_CONFIG
-from track_utils import fit_data_scaler
-from savegbx import save_gbx
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+def get_resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+if os.name == 'nt':
+    import ctypes
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('com.github.donadigo.TMTrackNN')
 
 class GenerateThread(QThread):
     progress_sig = pyqtSignal(int)
@@ -38,37 +46,37 @@ class GenerateThread(QThread):
     def run(self):
         self.stopped = False
         self.status_sig.emit('Initializing...', True)
+        from builder import Builder
+        from config import NET_CONFIG
+        from savegbx import save_gbx
+
         from keras.models import load_model
 
-        if not self.train_data:
+        data_path = get_resource_path('data')
+        if not self.scaler:
             self.status_sig.emit('Loading data...', True)
-            train_data_file = open(NET_CONFIG['train_fname'], 'rb')
-            self.train_data = pickle.load(train_data_file)
+            with open(os.path.join(data_path, 'position_scaler.pkl'), 'rb') as scaler_file:
+                self.scaler = pickle.load(scaler_file)
 
         if self.stopped:
             return
 
         if not self.pattern_data:
-            pattern_data_file = open(NET_CONFIG['patterns_fname'], 'rb')
-            self.pattern_data = pickle.load(pattern_data_file)
+            with open(os.path.join(data_path, 'pattern_data.pkl'), 'rb') as pattern_file:
+                self.pattern_data = pickle.load(pattern_file)
+
 
         if self.stopped:
             return
 
-        if not self.scaler:
-            self.status_sig.emit('Preparing data...', True)
-            self.scaler = fit_data_scaler(self.train_data)
-
-        if self.stopped:
-            return
-
+        models_path = get_resource_path('models')
         if not self.builder:
             self.status_sig.emit('Loading models...', True)
-            block_model = load_model('models/block_model_400_300.h5')
-            pos_model = load_model('models/position_model_1024_512_512.h5')
+            block_model = load_model(os.path.join(models_path, 'block_model_300_300.h5'))
+            pos_model = load_model(os.path.join(models_path, 'position_model_512_512_256.h5'))
 
             self.builder = Builder(block_model, pos_model,
-                                   NET_CONFIG['lookback'], self.train_data, self.pattern_data, self.scaler, temperature=self.variety)
+                                   NET_CONFIG['lookback'], None, self.pattern_data, self.scaler, temperature=self.variety)
 
         if self.stopped:
             return
@@ -79,7 +87,7 @@ class GenerateThread(QThread):
 
         if track and self.save_fname:
             save_gbx({'track_data': track, 'map_name': self.map_name},
-                     'data/Template.Challenge.Gbx', self.save_fname)
+                     os.path.join(data_path, 'Template.Challenge.Gbx'), self.save_fname)
             self.status_sig.emit('Done.', False)
 
     def stop(self):
@@ -111,6 +119,10 @@ class Window(QWidget):
 
         self.setWindowTitle('TMTrackNN')
         self.setGeometry(0, 0, self.width, self.height)
+
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        icon = QIcon(os.path.join(script_dir, 'icon.ico'))
+        self.setWindowIcon(icon)
 
         fg = self.frameGeometry()
         center = QDesktopWidget().availableGeometry().center()
@@ -256,7 +268,9 @@ class Window(QWidget):
     def generate(self):
         fname = QFileDialog.getSaveFileName(
             self, 'Choose save location', self.get_tm_maps_dir())[0]
-
+        if fname == '':
+            return
+            
         basename = os.path.basename(fname)
         if not basename.endswith('.Challenge.Gbx') and not basename.endswith('.Map.Gbx'):
             fname += '.Challenge.Gbx'
