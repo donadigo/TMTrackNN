@@ -6,25 +6,25 @@ import time
 
 from keras.models import load_model
 
-import blocks as bl
-import gbx
-import gi
+import core.stadium_blocks as bl
+import core.gbx as gbx
 from builder import Builder
-from config import NET_CONFIG
-from gi.repository import GdkPixbuf, GLib, Gtk
+from config import load_config
 
+import gi
 gi.require_version('Gtk', '3.0')
 
+from gi.repository import GdkPixbuf, GLib, Gtk
 
 IMG_SIZE = 30
-lookback = NET_CONFIG['lookback']
 
 class LiveBuildWindow(Gtk.Window):
-    def __init__(self, block_model, pos_model):
+    def __init__(self, block_model, pos_model, lookback, pattern_data, scaler):
         Gtk.Window.__init__(self, title='Live Build')
         self.timeout_ids = []
         self.rot_images = []
-        self.builder = Builder(block_model, pos_model, lookback, None, True)
+        self.lookback = lookback
+        self.builder = Builder(block_model, pos_model, self.lookback, None, pattern_data, scaler, reset=False)
         self.track = []
 
         board = Gtk.Grid()
@@ -96,17 +96,17 @@ class LiveBuildWindow(Gtk.Window):
         self.images[x][z].set_opacity(0.3)
         
     def on_clear(self, button):
+        self.builder.gmap = None
         self.track = []
         self.build()
 
     def on_accept(self, button):
-        self.track = self.track + [self.builder.build(len(self.track) + 1, False, self.track[-lookback:])[-1]]
-        print(self.track)
+        self.track = self.builder.build(len(self.track) + 1, put_finish=False, failsafe=False)
         self.build()
 
     def on_discard(self, button):
-        self.track = self.track[:-1]
-        self.track = self.track + [self.builder.build(len(self.track) + 1, False, self.track[-lookback:])[-1]]
+        self.builder.gmap.pop()
+        self.track = self.builder.build(len(self.track), put_finish=False, failsafe=False)
         self.build()
 
     def on_destroy(self, window):
@@ -129,9 +129,6 @@ class LiveBuildWindow(Gtk.Window):
             x = 31
         if z > 31:
             z = 31
-
-        if block[0] == bl.START_LINE_BLOCK:
-            print('Start block: {}'.format (block))
 
         r = block[4]
 
@@ -181,17 +178,22 @@ class LiveBuildWindow(Gtk.Window):
 if len(sys.argv) > 2:
     block_model_fname = sys.argv[1]
     pos_model_fname = sys.argv[2]
+    config_fname = sys.argv[3]
 else:
-    print('No model filename specified')
+    print(f'Usage: ./{sys.argv[0]} block-model-filename position-model-filename config-filename')
     quit()
 
 block_model = load_model(block_model_fname)
 pos_model = load_model(pos_model_fname)
+config = load_config(config_fname)
+
+pattern_data = pickle.load(open(config['pattern_data'], 'rb'))
+scaler = pickle.load(open(config['position_scaler'], 'rb'))
 
 block_model.summary()
 pos_model.summary()
 
-win = LiveBuildWindow(block_model, pos_model)
+win = LiveBuildWindow(block_model, pos_model, config['lookback'], pattern_data, scaler)
 win.build()
 win.show_all()
 

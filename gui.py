@@ -2,8 +2,8 @@ import os
 import pickle
 import sys
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QPoint
-from PyQt5.QtGui import QIntValidator, QIcon
+from PyQt5.QtCore import QObject, QPoint, Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QIcon, QIntValidator
 from PyQt5.QtWidgets import *
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
@@ -33,6 +33,7 @@ class GenerateThread(QThread):
         self.map_name = None
         self.length = 0
         self.variety = 0
+        self.config = None
         self.train_data = None
         self.pattern_data = None
         self.scaler = None
@@ -47,24 +48,25 @@ class GenerateThread(QThread):
         self.stopped = False
         self.status_sig.emit('Initializing...', True)
         from builder import Builder
-        from config import NET_CONFIG
+        from config import load_config
         from savegbx import save_gbx
 
         from keras.models import load_model
 
         data_path = get_resource_path('data')
+        config = load_config(os.path.join(data_path, 'config.json'))
+
         if not self.scaler:
             self.status_sig.emit('Loading data...', True)
-            with open(os.path.join(data_path, 'position_scaler.pkl'), 'rb') as scaler_file:
+            with open(os.path.join(data_path, config['position_scaler']), 'rb') as scaler_file:
                 self.scaler = pickle.load(scaler_file)
 
         if self.stopped:
             return
 
         if not self.pattern_data:
-            with open(os.path.join(data_path, 'pattern_data.pkl'), 'rb') as pattern_file:
+            with open(os.path.join(data_path, config['pattern_data']), 'rb') as pattern_file:
                 self.pattern_data = pickle.load(pattern_file)
-
 
         if self.stopped:
             return
@@ -76,7 +78,7 @@ class GenerateThread(QThread):
             pos_model = load_model(os.path.join(models_path, 'position_model_512_512_256.h5'))
 
             self.builder = Builder(block_model, pos_model,
-                                   NET_CONFIG['lookback'], None, self.pattern_data, self.scaler, temperature=self.variety)
+                                   config['lookback'], None, self.pattern_data, self.scaler, temperature=self.variety)
 
         if self.stopped:
             return

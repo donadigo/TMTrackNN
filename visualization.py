@@ -5,10 +5,10 @@ from gi.repository import Gtk, GdkPixbuf, GLib
 import pickle
 import os, sys
 import time, threading
-import gbx
-import blocks as bl
-from config import NET_CONFIG
-from block_offsets import rotate_track_tuples
+import core.gbx as gbx
+import core.stadium_blocks as bl
+from config import load_config
+from core.track_utils import rotate_track_tuples
 
 IMG_SIZE = 30
 
@@ -183,9 +183,11 @@ if len(sys.argv) > 1:
         track = pickle.load(open(load_fname, 'rb+'))
         data = [('', track)]
     else:
-        # data = pickle.load(open('data/train_data.pkl', 'rb'))
-        data = pickle.load(open(NET_CONFIG['train_fname'], 'rb'))
+        data = pickle.load(open('data/train_data.pkl', 'rb'))
         current_idx = int(sys.argv[1])
+else:
+    data = pickle.load(open('data/train_data.pkl', 'rb'))
+    current_idx = 0
 
 win = TrackVisualizationWindow(current_idx)
 win.build()

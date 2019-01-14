@@ -1,28 +1,29 @@
 import argparse
 import os
 import pickle
+import json
 from multiprocessing import pool
 
-import matplotlib.pyplot as plt
+from core.stadium_block_offsets import STADIUM_BLOCK_OFFSETS
+from core.block_utils import BFLAGS, BID, BROT, BX, BY, BZ
+from core.stadium_blocks import STADIUM_BLOCKS
+from core.gbx import Gbx, GbxType
+from core.headers import Vector3
+from core.track_utils import (create_pattern_data, fit_data_scaler,
+                              occupied_track_positions)
 
-from block_offsets import BLOCK_OFFSETS
-from blocks import BFLAGS, BID, BLOCKS, BROT, BX, BY, BZ
-from gbx import Gbx, GbxType
-from track_utils import (create_pattern_data, fit_data_scaler, get_block_name,
-                         occupied_track_positions, rotate_block_offsets)
 
+# def show_plot(trace):
+#     import matplotlib.pyplot as plt
+#     from mpl_toolkits.mplot3d import Axes3D
+#     fig = plt.figure()
+#     ax = fig.add_subplot(111, projection='3d')
+#     xs = [p[0] for p in trace]
+#     ys = [p[1] for p in trace]
+#     zs = [p[2] for p in trace]
 
-def show_plot(trace):
-    from mpl_toolkits.mplot3d import Axes3D
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    xs = [p[0] for p in trace]
-    ys = [p[1] for p in trace]
-    zs = [p[2] for p in trace]
-
-    ax.scatter(xs, ys, zs)
-    plt.show()
-
+#     ax.scatter(xs, ys, zs)
+#     plt.show()
 
 def get_at_pos(occ, pos):
     for block, block_offsets in occ.items():
@@ -32,14 +33,16 @@ def get_at_pos(occ, pos):
     return None, None
 
 
-def process_blocks(blocks, ghost):
+def process_blocks(blocks, ghost, trace_offset):
     trace = []
     for record in ghost.records:
-        for xoff in [0, -0.5, 0.5]:
-            for zoff in [0, -0.5, 0.5]:
-                pos = record.get_block_position(xoff, zoff)
-                if not pos in trace:
-                    trace.append(pos)
+        for xoff in [0, -trace_offset, trace_offset]:
+            for zoff in [0, -trace_offset, trace_offset]:
+                for yoff in [0, -trace_offset]:
+                    pos = record.get_block_position(xoff, yoff, zoff)
+
+                    if not pos in trace:
+                        trace.append(pos)
 
     occ = occupied_track_positions(blocks)
 
@@ -50,11 +53,8 @@ def process_blocks(blocks, ghost):
         block, offsets = get_at_pos(occ, pos)
 
         if not block:
-            block, offsets = get_at_pos(occ, [pos[0], pos[1] - 1, pos[2]])
-
-        if not block:
             if pos[1] == 1:
-                block = (BLOCKS['StadiumGrass'], pos[0], pos[1], pos[2], 0, 0)
+                block = (STADIUM_BLOCKS['StadiumGrass'], pos[0], pos[1], pos[2], 0, 0)
                 s.append(block)
 
             trace.pop(0)
@@ -69,9 +69,9 @@ def process_blocks(blocks, ghost):
     return s
 
 
-def process(replay_gbx):
+def process(replay_gbx, trace_offset):
     replays = replay_gbx.get_classes_by_ids(
-        [GbxType.REPLAY_RECORD, GbxType.REPLAY_RECORD_TM2])
+        [GbxType.REPLAY_RECORD, GbxType.REPLAY_RECORD_OLD])
     ghosts = replay_gbx.get_classes_by_ids(
         [GbxType.GAME_GHOST, GbxType.CTN_GHOST])
 
@@ -93,13 +93,13 @@ def process(replay_gbx):
 
         filtered.append(t)
 
-    return process_blocks(filtered, ghost)
+    return process_blocks(filtered, ghost, trace_offset)
 
 
-def process_fname(fname):
+def process_fname(fname, trace_offset):
     print('\tProcessing: \t{}'.format(fname))
     replay_file = Gbx(fname)
-    return fname, process(replay_file)
+    return fname, process(replay_file, trace_offset)
 
 
 if __name__ == '__main__':
@@ -108,6 +108,12 @@ if __name__ == '__main__':
                         help='the folder filename that contains all .Replay.Gbx files')
     parser.add_argument('-o', '--output', required=True,
                         help='the output folder that the preprocessed data is saved to')
+    parser.add_argument('-t', '--trace-offset', required=False, type=int, default=1,
+                        help='''the offset that will be used for replay tracing - defaults to 1
+                        (small = tracing blocks only very near the replay car;
+                        large = tracing blocks farther from the car)''')
+    parser.add_argument('-l', '--lookback', default=20, type=int,
+                        help='the lookback to use in the config file, this setting will not affect the final data')
     args = parser.parse_args()
 
     try:
@@ -122,15 +128,21 @@ if __name__ == '__main__':
     train_name = os.path.join(args.output, 'train_data.pkl')
     pattern_name = os.path.join(args.output, 'pattern_data.pkl')
     scaler_name = os.path.join(args.output, 'position_scaler.pkl')
+    config_name = os.path.join(args.output, 'config.json')
+
+    trace_offset = args.trace_offset
 
     train_data = []
 
     names = os.listdir(traindir)
+    names = [name for name in names if name.endswith('.Replay.Gbx')]
     processed = 0
     for i in range(0, len(names), 100):
-        p = pool.Pool()
         end = min(len(names), i + 100)
-        entries = p.map(process_fname, names[i:end])
+
+        p = pool.Pool(initargs=(trace_offset,))
+        it = [[name, trace_offset] for name in names[i:end]]
+        entries = p.starmap(process_fname, it)
         p.close()
 
         for entry in entries:
@@ -158,7 +170,18 @@ if __name__ == '__main__':
     with open(pattern_name, 'wb+') as pattern_file:
         pickle.dump(create_pattern_data(train_data), pattern_file)
 
-    print('-- Scaling position data..,')
+    print('-- Scaling position data..')
     with open(scaler_name, 'wb+') as scaler_file:
         pickle.dump(fit_data_scaler(train_data), scaler_file)
+
+    print('-- Saving config file...')
+    config = {
+        'train_data': 'train_data.pkl',
+        'pattern_data': 'pattern_data.pkl',
+        'position_scaler': 'position_scaler.pkl',
+        'lookback': args.lookback
+    }
+
+    with open(config_name, 'w+') as config_file:
+        config_file.write(json.dumps(config, indent=4))
 

@@ -1,0 +1,6 @@
+{
+    "train_data": "train_data.pkl",
+    "pattern_data": "pattern_data.pkl",
+    "position_scaler": "position_scaler.pkl",
+    "lookback": 20
+}

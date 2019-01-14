@@ -1,21 +1,22 @@
 import os
 import pickle
+import random
 import struct
 import sys
+import lzo
 from enum import Enum
 
-import blocks as bl
-import gbx
-import lzo
-from track_utils import populate_flags, rotate_track
-from blocks import BID, BROT, BX, BY, BZ
-import random
+import core.gbx as gbx
+from core.block_utils import BID, BROT, BX, BY, BZ, get_block_name
+from core.stadium_blocks import STADIUM_BLOCKS, BASE_BLOCKS
+from core.track_utils import populate_flags, rotate_track
 
 
 class Action(Enum):
     UNKNOWN = 0
     SAVEBIN = 1
-    ROTATE = 2
+    TRACK_DATA = 2
+    ROTATE = 3
 
     @staticmethod
     def from_string(s):
@@ -24,13 +25,14 @@ class Action(Enum):
             return Action.ROTATE
         elif s == 'savebin':
             return Action.SAVEBIN
+        elif s == 'trackdata':
+            return Action.TRACK_DATA
 
         return Action.UNKNOWN
 
 
 CURRENT_VER = 3
-BASE_LBS_IDX = 0b1000000000000000000000000000000
-
+BASE_LBS_IDX = 1 << 30
 GROUND_FLAG = 1 << 12
 
 MOODS = ['Sunrise', 'Day', 'Sunset', 'Night']
@@ -61,23 +63,16 @@ def write_lookback_string(stored_strings, seen_lookback, s):
 
     return lbs
 
-
-def check_bounds(position):
-    return (position[0] >= 0 and position[0] <= 31 and
-            position[1] >= 1 and position[1] <= 32 and
-            position[2] >= 0 and position[2] <= 31)
-
-
 def write_block(stored_strings, seen_lookback, block):
     bstr = bytearray()
 
-    bname = bl.get_block_name(block[0])
+    bname = get_block_name(block[BID], STADIUM_BLOCKS)
     bstr += write_lookback_string(stored_strings, seen_lookback, bname)
 
-    bstr += struct.pack('B', block[4])
-    bstr += struct.pack('B', max(0, block[1]))
-    bstr += struct.pack('B', max(0, block[2]))
-    bstr += struct.pack('B', max(0, block[3]))
+    bstr += struct.pack('B', block[BROT])
+    bstr += struct.pack('B', max(0, block[BX]))
+    bstr += struct.pack('B', max(1, block[BY]))
+    bstr += struct.pack('B', max(0, block[BZ]))
 
     flags = 0
     if len(block) > 5:
@@ -97,15 +92,14 @@ def rotate_track_challenge(challenge, rotation):
     blocks = rotate_track(challenge.blocks[:], rotation)
 
     for block in blocks:
-        bid = bl.BLOCKS[block.name]
+        bid = STADIUM_BLOCKS[block.name]
 
         rotation = block.rotation
         position = block.position
 
-        if not bid in bl.BASE_BLOCKS:
+        if not bid in BASE_BLOCKS:
             continue
-        track.append(
-            (bid, position[0], position[1], position[2], rotation, block.flags))
+        track.append((bid, position.x, position.y, position.z, rotation, block.flags))
 
     return track
 
@@ -234,10 +228,8 @@ def save_gbx(options, template, output):
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('Usage:')
-        print(
-            './{} savebin track-filename.bin template-filename.Challenge.Gbx output-filename.Challenge.Gbx'.format(sys.argv[0]))
-        print(
-            './{} rotate [1, 2, 3] template-filename.Challenge.Gbx output-filename.Challenge.Gbx'.format(sys.argv[0]))
+        print('./{} savebin track-filename.bin template-filename.Challenge.Gbx output-filename.Challenge.Gbx'.format(sys.argv[0]))
+        print('./{} rotate [1, 2, 3] template-filename.Challenge.Gbx output-filename.Challenge.Gbx'.format(sys.argv[0]))
         sys.exit()
 
     options = {}
@@ -247,6 +239,8 @@ if __name__ == '__main__':
         sys.exit()
     elif action == Action.ROTATE:
         options['rotation'] = int(sys.argv[2])
+    elif action == Action.TRACK_DATA:
+        options['track_data'] = eval(sys.argv[2])
     elif action == Action.SAVEBIN:
         options['input'] = sys.argv[2]
 

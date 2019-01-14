@@ -4,12 +4,12 @@ Building TrackMania tracks with neural networks.
 This is a hobby project for fun to learn Python and also to learn how neural nets work. It is not meant to work and probably never will.
 
 ## What?
-The aim is to generate new maps, tracks using NN's for a racing game called [TrackMania](https://www.trackmania.com/). I created this project a while ago for fun and mostly for educational purposes.
+The aim is to generate new maps, tracks using NN's for a racing game called [TrackMania](https://www.trackmania.com/). I created this project a while ago for fun and mostly for educational purposes. [Medium post.](https://medium.com/@donadigo/tmtracknn-generating-trackmania-tracks-with-neural-networks-146db058e7cb)
 
 ## Generating new tracks
 You can use `build.py` to generate new tracks and save them directly to a .Gbx file e.g:
 ```
-python3 build.py -b models/block_model_300_300.h5 -p models/position_model_1024_512.h5 -l 60 -o GeneratedTrack.Challenge.Gbx
+python3 build.py -b models/block_model_300_300.h5 -p models/position_model_512_512_256.h5 -l 60 -c data/config.json -o GeneratedTrack.Challenge.Gbx
 ```
 This will generate a track using the provided block and position models that will be 60 blocks in length and save the track to `GeneratedTrack.Challenge.Gbx`
 

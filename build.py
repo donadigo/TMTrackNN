@@ -15,16 +15,17 @@ parser.add_argument('-o', '--output', required=True,
 parser.add_argument('-t', '--temperature', type=float, default=1.2,
                     help='''sampling temperature, the higher the more "creative" the network is
                     but at the expense of higher chance that the results will be unsatisfying (default is 1.2)''')
+parser.add_argument('-c', '--config', required=True,
+                    help='the config JSON file to use for building')
 
 args = parser.parse_args()
 
 import numpy as np
 from keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler
+from core.stadium_blocks import STADIUM_BLOCKS
 
-from blocks import BID, BLOCKS, BROT, BX, BY, BZ
-from track_utils import fit_data_scaler
-from config import NET_CONFIG
+from config import load_config
 from builder import Builder
 from savegbx import save_gbx
 
@@ -33,14 +34,18 @@ np.warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
+POS_LEN = 3
+ROTATE_LEN = 4
 
-train_data_file = open(NET_CONFIG['train_fname'], 'rb')
-train_data = pickle.load(train_data_file)
+INP_LEN = len(STADIUM_BLOCKS) + POS_LEN + ROTATE_LEN
 
-pattern_data_file = open(NET_CONFIG['patterns_fname'], 'rb')
+config = load_config(args.config)
+
+pattern_data_file = open(config['pattern_data'], 'rb')
 pattern_data = pickle.load(pattern_data_file)
 
-scaler = fit_data_scaler(train_data)
+scaler_file = open(config['position_scaler'], 'rb')
+scaler = pickle.load(scaler_file)
 
 
 def progress_callback(completed, total):
@@ -48,18 +53,14 @@ def progress_callback(completed, total):
     sys.stdout.write(f'Progress: {percentage}% [{completed} / {total}]\r')
     sys.stdout.flush()
 
-
-block_model_name = sys.argv[1]
-pos_model_name = sys.argv[2]
-
 block_model = load_model(args.block_model)
 pos_model = load_model(args.pos_model)
-
+print(pos_model.summary())
 builder = Builder(block_model, pos_model,
-                  NET_CONFIG['lookback'], train_data, pattern_data, scaler, temperature=args.temperature)
+                  config['lookback'], None, pattern_data, scaler, temperature=args.temperature)
 
 track = builder.build(args.length, verbose=False, save=False,
-                      progress_callback=progress_callback)
+                      progress_callback=progress_callback, map_size=(32, 32, 32))
 print(track)
 save_gbx({'track_data': track}, 'data/Template.Challenge.Gbx', args.output)
 print(f'Track saved to {args.output}.')

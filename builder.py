@@ -1,11 +1,16 @@
 import pickle
 import random
+import time
 
 import numpy as np
 
-import blocks as bl
-from track_utils import intersects, occupied_track_vectors, rotate_track_tuples, dist, is_on_ground, vectorize_track
-from blocks import BLOCKS, BID, BROT, BX, BY, BZ, BFLAGS
+from core.block_utils import (BFLAGS, BID, BROT, BX, BY, BZ, one_hot_bid,
+                              block_to_vec)
+from core.stadium_blocks import STADIUM_BLOCKS, START_LINE_BLOCK, FINISH_LINE_BLOCK, GROUND_BLOCKS
+from core.headers import Vector3
+from core.track_utils import (intersects, occupied_track_vectors,
+                              rotate_track_tuples)
+from gamemap import GameMap
 from tech_block_weights import TECH_BLOCK_WEIGHTS
 
 POS_LEN = 3
@@ -13,22 +18,22 @@ ROTATE_LEN = 4
 
 
 class Builder(object):
-    def __init__(self, block_model, position_model, lookback, seed_data, pattern_data, scaler, temperature=1.2):
+    def __init__(self, block_model, position_model, lookback, seed_data, pattern_data, scaler, temperature=1.2, reset=True):
         self.block_model = block_model
         self.position_model = position_model
         self.lookback = lookback
         self.seed_data = seed_data
-        self.scaler = scaler
-        self.track = []
-        self.inp_len = len(bl.BLOCKS) + POS_LEN + ROTATE_LEN
-        self.temperature = temperature
         self.pattern_data = pattern_data
-        self.max_map_size = (32, 32, 32)
+        self.scaler = scaler
+        self.inp_len = len(STADIUM_BLOCKS) + POS_LEN + ROTATE_LEN
+        self.temperature = temperature
+        self.reset = reset
         self.running = False
+        self.gmap = None
 
     @staticmethod
     def random_start_block():
-        return (bl.START_LINE_BLOCK, 0, 0, 0, random.randrange(0, 4), 0)
+        return (START_LINE_BLOCK, 0, 0, 0, random.randrange(0, 4), 0)
 
     # Source:
     # https://github.com/keras-team/keras/blob/master/examples/lstm_text_generation.py#L66
@@ -40,36 +45,6 @@ class Builder(object):
         preds = exp_preds / np.sum(exp_preds)
         probas = np.random.multinomial(1, preds, 1)
         return np.argmax(probas)
-
-    @staticmethod
-    def block_to_vec(inp_len, block, scaler, encode_pos):
-        if block[0] == 0:
-            return [0] * inp_len
-
-        bid_vec = bl.one_hot_bid(block[0])
-        if encode_pos:
-            pos_vec = scaler.transform([block[BX:BZ+1]])[0]
-            rot_vec = bl.one_hot_rotation(block[4])
-        else:
-            pos_vec = [-1, -1, -1]
-            rot_vec = [-1, -1, -1, -1]
-
-        return bid_vec + list(pos_vec) + rot_vec
-
-    @staticmethod
-    def decoded_track(track, start_pos=(0, 0, 0)):
-        d = track[:]
-        d[0] = (d[0][BID], start_pos[0], start_pos[1],
-                start_pos[2], d[0][BROT])
-        for i in range(1, len(d)):
-            block = d[i]
-            prev = d[i - 1]
-            d[i] = (block[BID],
-                    block[BX] + prev[BX],
-                    block[BY] + prev[BY],
-                    block[BZ] + prev[BZ],
-                    block[BROT])
-        return d
 
     def unpack_position_preds_vector(self, preds):
         pos_vec = [int(round(axis)) for axis in preds[0][0]]
@@ -92,12 +67,10 @@ class Builder(object):
         for i in range(1, self.lookback):
             X_position[0][i - 1] = X_position[0][i]
 
-        X_position[0][-1] = self.block_to_vec(self.inp_len,
-                                              (next_block, 0, 0, 0, 0), self.scaler, False)
+        X_position[0][-1] = block_to_vec((next_block, 0, 0, 0, 0), self.inp_len, len(STADIUM_BLOCKS), self.scaler, False)
 
         pos_preds = self.position_model.predict(X_position)
-        pos_vec, pos_rot = self.unpack_position_preds_vector(
-            pos_preds)
+        pos_vec, pos_rot = self.unpack_position_preds_vector(pos_preds)
         return (next_block, pos_vec[0], pos_vec[1], pos_vec[2], pos_rot), block_preds
 
     def sample_seed(self, seed_len):
@@ -107,167 +80,124 @@ class Builder(object):
 
     def score_prediction(self, prev_block, next_block):
         prev_block = (prev_block[BID], 0, 0, 0, prev_block[BROT])
-        subtrack = rotate_track_tuples(
+        normalized = rotate_track_tuples(
             [prev_block, next_block], 4 - prev_block[BROT] % 4)
 
-        prev_block = subtrack[0]
-        next_block = subtrack[1]
+        prev_block = normalized[0]
+        next_block = normalized[1]
         next_block = (next_block[BID], next_block[BX] - prev_block[BX], next_block[BY] -
                       prev_block[BY], next_block[BZ] - prev_block[BZ], next_block[BROT])
 
-        prev_block = prev_block[BID]
-        target = (prev_block, next_block)
+        target = (prev_block[BID], next_block)
         try:
             return self.pattern_data[target]
         except KeyError:
             return 0
 
     def prepare_inputs(self):
-        X_block = np.zeros((1, self.lookback, len(bl.BLOCKS)), dtype=np.bool)
+        X_block = np.zeros((1, self.lookback, len(STADIUM_BLOCKS)), dtype=np.bool)
         X_position = np.zeros((1, self.lookback, self.inp_len))
 
-        blocks = self.track[-self.lookback:]
+        blocks = self.gmap.track[-self.lookback:]
         i = -1
         for block in reversed(blocks):
-            X_block[0][i] = bl.one_hot_bid(block[BID])
+            X_position[0][i] = block_to_vec(block, self.inp_len, len(STADIUM_BLOCKS), self.scaler, True)
+            X_block[0][i] = one_hot_bid(block[BID], len(STADIUM_BLOCKS))
             i -= 1
 
-        i = -1
-        for block in reversed(blocks):
-            X_position[0][i] = self.block_to_vec(
-                self.inp_len, block, self.scaler, True)
-            i -= 1
-
-        return (X_block, X_position)
-
-    def position_track(self, track):
-        occ = occupied_track_vectors(track)
-        min_x = min(occ, key=lambda pos: pos[0])[0]
-        min_y = min(occ, key=lambda pos: pos[1])[1] - 1
-        min_z = min(occ, key=lambda pos: pos[2])[2]
-
-        max_x = max(occ, key=lambda pos: pos[0])[0]
-        max_y = max(occ, key=lambda pos: pos[1])[1] - 1
-        max_z = max(occ, key=lambda pos: pos[2])[2]
-
-        cx = 32 - (max_x - min_x + 1)
-        if cx > 0:
-            cx = int(cx / 2)
-        cz = 32 - (max_z - min_z + 1)
-        if cz > 0:
-            cz = int(cz / 2)
-
-        min_x = 0 if min_x >= 0 else min_x
-        min_y = 0 if min_y >= 0 else min_y
-        min_z = 0 if min_z >= 0 else min_z
-
-        max_x = 0 if max_x < 32 else max_x - 31
-        max_y = 0 if max_y < 32 else max_y - 31
-        max_z = 0 if max_z < 32 else max_z - 31
-
-        xoff = min_x - max_x
-        zoff = min_z - max_z
-
-        p = []
-        for block in track:
-            p.append((block[BID], block[BX] - xoff + cx, block[BY],
-                      block[BZ] - zoff + cz, block[BROT]))
-
-        return p
-
-    def exceeds_map_size(self, track):
-        occ = occupied_track_vectors(track)
-        min_x = min(occ, key=lambda pos: pos[0])[0]
-        min_y = min(occ, key=lambda pos: pos[1])[1]
-        min_z = min(occ, key=lambda pos: pos[2])[2]
-
-        max_x = max(occ, key=lambda pos: pos[0])[0]
-        max_y = max(occ, key=lambda pos: pos[1])[1]
-        max_z = max(occ, key=lambda pos: pos[2])[2]
-
-        return max_x - min_x + 1 > self.max_map_size[0] or max_y - min_y + 1 > self.max_map_size[1] or max_z - min_z + 1 > self.max_map_size[2] or min_y < 1
+        return X_block, X_position
 
     def stop(self):
         self.running = False
 
-    def build(self, track_len, use_seed=False, failsafe=True, verbose=True, save=True, progress_callback=None):
+    def build(self, 
+        track_len,
+        use_seed=False,
+        failsafe=True,
+        verbose=True,
+        save=True,
+        put_finish=True,
+        progress_callback=None,
+        map_size=(20, 8, 20)):
+
         self.running = True
 
-        self.max_map_size = (20, 8, 20)
-        if use_seed and self.seed_data:
-            self.track = self.sample_seed(3)
-        else:
-            self.track = [self.random_start_block()]
+        fixed_y = random.randrange(1, 7)
+        if not self.gmap or self.reset:
+            self.gmap = GameMap(
+                Vector3(map_size[0], map_size[1], map_size[2]), Vector3(0, fixed_y, 0))
 
-        fixed_y = random.randrange(1, 5)
+        if use_seed and self.seed_data:
+            self.gmap.track = self.sample_seed(3)
+        elif len(self.gmap) == 0:
+            self.gmap.add(self.random_start_block())
+
+        print(self.gmap.track)
+        self.gmap.update()
 
         blacklist = []
-        end = False
         current_block_preds = None
-        while len(self.track) < track_len:
+        while len(self.gmap) < track_len:
             if not self.running:
                 return None
 
-            if len(blacklist) >= 10 or (len(blacklist) == 1 and end):
+            end = len(self.gmap) == track_len - 1
+            if len(blacklist) >= 10 or (len(blacklist) == 1 and end) and self.reset:
                 if verbose:
                     print('More than 10 fails, going back.')
 
-                if len(self.track) > track_len - 5:
+                if len(self.gmap) > track_len - 5:
                     back = 5
                 elif end:
                     back = 10
                 else:
                     back = random.randrange(2, 6)
 
-                end_idx = min(len(self.track) - 1, back)
+                end_idx = min(len(self.gmap) - 1, back)
                 if end_idx > 0:
-                    del self.track[-end_idx:len(self.track)]
+                    del self.gmap.track[-end_idx:len(self.gmap)]
 
-                end = False
                 blacklist = []
                 current_block_preds = None
 
             X_block, X_position = self.prepare_inputs()
 
-            override_block = -1
-            if end:
-                override_block = bl.FINISH_LINE_BLOCK
+            override_block = FINISH_LINE_BLOCK if end and put_finish else -1
 
             next_block, current_block_preds = self.predict_next_block(
                 X_block[:], X_position[:], override_block, blacklist=blacklist, block_preds=current_block_preds)
 
-            decoded = self.decoded_track(
-                self.track + [next_block], start_pos=(0, fixed_y, 0))
+            self.gmap.add(next_block)
+            decoded = self.gmap.decoded
 
             if failsafe:
                 # Do not exceed map size
-                if self.exceeds_map_size(decoded):
+                if self.gmap.exceeds_map_size():
                     blacklist.append(next_block[BID])
+                    self.gmap.pop()
                     continue
 
                 occ = occupied_track_vectors([decoded[-1]])
                 if len(occ) > 0:
-                    min_y_block = min(occ, key=lambda x: x[1])[1]
+                    min_y_block = min(occ, key=lambda pos: pos.y).y
                 else:
                     min_y_block = decoded[-1][BY]
 
                 # If we are above the ground
-                if min_y_block > 1:
-                    if next_block[BID] == BLOCKS['StadiumGrass']:
-                        blacklist.append(next_block[BID])
-                        continue
-
-                    if next_block[BID] in bl.GROUND_BLOCKS:
-                        blacklist.extend(bl.GROUND_BLOCKS)
-                        continue
-
-                if (intersects(decoded[:-1], decoded[-1]) or  # Overlaps the track
-                        (next_block[BID] == bl.FINISH_LINE_BLOCK and not end)):  # Tries to put finish before desired track length
-                    blacklist.append(next_block[BID])
+                if min_y_block > 1 and next_block[BID] in GROUND_BLOCKS:
+                    blacklist.extend(GROUND_BLOCKS)
+                    self.gmap.pop()
                     continue
 
-                if self.score_prediction(self.track[-1], next_block) < 5:
+                if (intersects(decoded[:-1], decoded[-1]) or  # Overlaps the track
+                        (next_block[BID] == FINISH_LINE_BLOCK and not end)):  # Tries to put finish before desired track length
                     blacklist.append(next_block[BID])
+                    self.gmap.pop()
+                    continue
+
+                if self.score_prediction(self.gmap[-2], next_block) < 5:
+                    blacklist.append(next_block[BID])
+                    self.gmap.pop()
                     continue
 
             blacklist = []
@@ -275,19 +205,13 @@ class Builder(object):
 
             next_block = (next_block[BID], next_block[BX], next_block[BY],
                           next_block[BZ], next_block[BROT])
-            self.track.append(next_block)
-            if len(self.track) >= track_len - 1:
-                end = True
 
             if progress_callback:
-                progress_callback(len(self.track), track_len)
+                progress_callback(len(self.gmap), track_len)
 
             if verbose:
-                print(len(self.track))
+                print(len(self.gmap))
 
-        result_track = self.position_track(
-            self.decoded_track(self.track, (0, fixed_y, 0)))
-
-        result_track = [
-            block for block in result_track if block[BID] != BLOCKS['StadiumGrass']]
+        result_track = self.gmap.center()
+        result_track = [block for block in result_track if block[BID] != STADIUM_BLOCKS['StadiumGrass']]
         return result_track

@@ -25,12 +25,8 @@ if len(sys.argv) <= 1:
     quit()
 
 train_idx = int(sys.argv[1])
-# print('Loading train data...')
-track = pickle.load(open('sorted-data.pkl', 'rb+'))[train_idx][1]
-# track = pickle.load(open('data\\train_data.pkl', 'rb+'))[train_idx][1]
-# track = pickle.load(open('generated-track.bin', 'rb'))
+track = pickle.load(open('data\\train_data.pkl', 'rb+'))[train_idx][1]
 print(track)
-
 
 arr_img = pygame.image.load('blocks-images\\arr.jpg')
 arr_img = pygame.transform.scale(arr_img, (10, 10))
