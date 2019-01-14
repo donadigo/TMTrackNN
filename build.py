@@ -55,7 +55,6 @@ def progress_callback(completed, total):
 
 block_model = load_model(args.block_model)
 pos_model = load_model(args.pos_model)
-print(pos_model.summary())
 builder = Builder(block_model, pos_model,
                   config['lookback'], None, pattern_data, scaler, temperature=args.temperature)
 
