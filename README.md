@@ -51,12 +51,12 @@ It is recommended to have a dedicated GPU for training the nets, otherwise train
 
 To train the block net with the trained model in the `models/` directory:
 ```sh
-python3 -i train_blocks.py -g -l models/block_model_300_300.h5
+python3 -i train_blocks.py -c data/config.json -l models/block_model_300_300.h5
 ```
 
 To train the position net with the trained model in the `models/` directory:
 ```sh
-python3 -i train_pos.py -g -l models/position_model_512_256_256.h5
+python3 -i train_pos.py -c data/config.json -l models/position_model_512_256_256.h5
 ```
 
 Invoking either `train_blocks.py` or `train_pos.py` with the `-l` option will automatically 
