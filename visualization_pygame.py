@@ -1,5 +1,5 @@
 import pygame
-import blocks
+from core.stadium_blocks import EDITOR_IDS
 import pickle
 import os
 import sys
@@ -21,14 +21,14 @@ def rot_to_angle(rot):
 
 
 if len(sys.argv) <= 1:
-    print('No train index specified')
-    quit()
-
-train_idx = int(sys.argv[1])
-track = pickle.load(open('data\\train_data.pkl', 'rb+'))[train_idx][1]
+    train_idx = 0
+else:
+    train_idx = int(sys.argv[1])
+    
+track = pickle.load(open('data/train_data.pkl', 'rb+'))[train_idx][1]
 print(track)
 
-arr_img = pygame.image.load('blocks-images\\arr.jpg')
+arr_img = pygame.image.load('blocks-images/arr.jpg')
 arr_img = pygame.transform.scale(arr_img, (10, 10))
 
 screen = pygame.display.set_mode((w, h))
@@ -36,18 +36,18 @@ screen = pygame.display.set_mode((w, h))
 images = []
 for block in track:
     try:
-        eid = blocks.EDITOR_IDS[block[0]]
+        eid = EDITOR_IDS[block[0]]
         f = eid + '.jpg'
     except KeyError:
         continue
 
     try:
-        img = pygame.image.load('blocks-images\\' + f)
+        img = pygame.image.load(os.path.join('blocks-images', f))
         img = pygame.transform.scale(img, (IMG_SIZE, IMG_SIZE))
 
         images.append((img, block[1], block[2], block[3], block[4]))
     except pygame.error:
-        img = pygame.image.load('blocks-images\\' + 'empty.jpg')
+        img = pygame.image.load(os.path.join('blocks-images', 'empty.jpg'))
         img = pygame.transform.scale(img, (IMG_SIZE, IMG_SIZE))
 
         images.append((img, block[1], block[2], block[3], block[4]))
