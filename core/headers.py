@@ -149,6 +149,7 @@ class CGameGhost(object):
     def __init__(self, id):
         self.id = id
         self.records = []
+        self.sample_period = None
 
 
 class CGameCtnGhost(CGameGhost):
