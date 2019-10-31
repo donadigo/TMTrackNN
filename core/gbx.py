@@ -441,7 +441,9 @@ class Gbx(object):
         data = zlib.decompress(comp_data, 0, uncomp_sz)
 
         gr = ByteReader(data)
-        gr.skip(5 * 4)
+        gr.skip(3 * 4)
+        game_class.sample_period = gr.read_uint32()
+        gr.skip(1 * 4)
 
         sample_data_sz = gr.read_uint32()
         sample_data_pos = gr.pos
