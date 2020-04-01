@@ -2,6 +2,7 @@ import logging
 import struct
 from enum import IntEnum
 
+import hashlib
 import lzo
 import zlib
 from io import IOBase
@@ -21,6 +22,7 @@ class GbxType(IntEnum):
     REPLAY_RECORD_OLD = 0x02407E000
     GAME_GHOST = 0x0303F005
     CTN_GHOST = 0x03092000
+    CTN_GHOST_OLD = 0x2401B000 
     CTN_COLLECTOR = 0x0301A000
     CTN_OBJECT_INFO = 0x0301C000
     CTN_DECORATION = 0x03038000
@@ -50,7 +52,9 @@ class Gbx(object):
         self.classes = {}
         self.root_classes = {}
         self.positions = {}
+        self.__current_class = None
         self.__current_waypoint = None
+        self.__replay_header_info = {}
 
         self.root_parser.skip(3)
         if self.version >= 4:
@@ -79,6 +83,15 @@ class Gbx(object):
 
         bp = ByteReader(self.data[:])
         self._read_node(self.class_id, -1, bp)
+
+    def find_raw_class_id(self, class_id):
+        bp = ByteReader(self.data[:])
+        for i in range(len(self.data) - 4):
+            bp.pos = i
+            if bp.read_uint32() == 0x309201D:
+                return i
+
+        return -1
 
     def get_class_by_id(self, _id):
         classes = self.get_classes_by_ids([_id])
@@ -129,11 +142,25 @@ class Gbx(object):
             game_class.track_name = self.root_parser.read_string()
             self.positions['track_name'] = self.root_parser.pop_info()
 
+            self.root_parser.read_byte()
+
             self.root_classes[cid] = game_class
 
             self.root_parser.pos = p + size
         elif cid == 0x03043005 or cid == 0x24003005:
             self.__community = self.root_parser.read_string()
+        elif cid == 0x03093000 or cid == 0x2403F000:
+            version = self.root_parser.read_uint32()
+            self.__replay_header_info['version'] = version
+            if version >= 2:
+                for _ in range(3):
+                    self.root_parser.read_string_lookback()
+                self.root_parser.skip(4)
+                self.__replay_header_info['nickname'] = self.root_parser.read_string()
+                if version >= 6:
+                    self.__replay_header_info['driver_login'] = self.root_parser.read_string()
+                    self.root_parser.skip(1)
+                    self.root_parser.read_string_lookback()
         else:
             self.root_parser.skip(size)
 
@@ -147,11 +174,16 @@ class Gbx(object):
                 game_class.community = self.__community
         elif class_id == GbxType.REPLAY_RECORD or class_id == GbxType.REPLAY_RECORD_OLD:
             game_class = headers.CGameReplayRecord(class_id)
+            if 'nickname' in self.__replay_header_info:
+                game_class.nickname = self.__replay_header_info['nickname']
+            if 'driver_login' in self.__replay_header_info:
+                game_class.driver_login = self.__replay_header_info['driver_login']
+
         elif class_id == GbxType.WAYPOINT_SPECIAL_PROP or class_id == 0x2E009000:
             game_class = headers.CGameWaypointSpecialProperty(class_id)
             self.__current_waypoint = game_class
             add = False
-        elif class_id == GbxType.CTN_GHOST:
+        elif class_id == GbxType.CTN_GHOST or class_id == GbxType.CTN_GHOST_OLD:
             game_class = headers.CGameCtnGhost(class_id)
         elif class_id == GbxType.GAME_GHOST:
             game_class = headers.CGameGhost(class_id)
@@ -159,6 +191,8 @@ class Gbx(object):
             game_class = headers.CGameCtnCollectorList(class_id)
         else:
             game_class = headers.CGameHeader(class_id)
+
+        self.__current_class = game_class
 
         if add:
             self.classes[depth] = game_class
@@ -182,7 +216,7 @@ class Gbx(object):
                 bp.read_string_lookback()
             elif cid == 0x03043011 or cid == 0x24003011:
                 for _ in range(2):
-                    idx = bp.read_uint32()
+                    idx = bp.read_int32()
                     if idx >= 0 and idx not in self.classes:
                         _class_id = bp.read_int32()
                         self._read_node(_class_id, idx, bp)
@@ -194,6 +228,8 @@ class Gbx(object):
                     bp.read_string_lookback()
                     bp.read_string_lookback()
                     bp.read_uint32()
+            elif cid == 0x0305B000 or cid == 0x2400C000:
+                bp.skip(8 * 4)
             elif cid == 0x0305B001 or cid == 0x2400C001:
                 bp.read_string()
                 bp.read_string()
@@ -216,11 +252,16 @@ class Gbx(object):
             elif cid == 0x0305B008 or cid == 0x2400C008:
                 bp.skip(2 * 4)
             elif cid == 0x0305B00A:
-                bp.skip(9 * 4)
-            elif cid == 0x0305B000 or cid == 0x2400C000:
-                bp.skip(8 * 4)
+                bp.skip(9 * 4)                
             elif cid == 0x0305B00D:
                 bp.skip(1 * 4)
+            elif cid == 0x03043014 or cid == 0x03043029:
+                bp.read(16 + 4)
+                # m = hashlib.md5()
+                # m.update(bp.read(16))
+                # if isinstance(self.__current_class, headers.CGameChallenge):
+                    # self.__current_class.password_hash = m.hexdigest()
+                    # self.__current_class.password_crc = bp.read_uint32()
             elif cid == 0x0304301F or cid == 0x2400301F:
                 game_class.map_uid = bp.read_string_lookback()
                 game_class.environment = bp.read_string_lookback()
@@ -253,7 +294,6 @@ class Gbx(object):
                     block.name = bp.read_string_lookback()
                     if block.name != 'Unassigned1':
                         game_class.blocks.append(block)
-
                     block.rotation = bp.read_byte()
                     block.position = headers.Vector3(
                         bp.read_byte(),
@@ -271,10 +311,16 @@ class Gbx(object):
 
                     if (block.flags & 0x8000) != 0:
                         block.skin_author = bp.read_string_lookback()
-                        block.skin = bp.read_int32()
-                        if block.skin >= 0 and block.skin not in self.classes:
-                            _class_id = bp.read_int32()
-                            self._read_node(_class_id, block.skin, bp)
+                        if game_class.flags >= 6:
+                            # TM2 flags
+                            bp.read_string() # Block waypoint type {Spawn, Goal}
+                            bp.read_int32()
+                            self._read_node(0x2E009000, 0, bp, False)
+                        else:
+                            block.skin = bp.read_int32()
+                            if block.skin >= 0 and block.skin not in self.classes:
+                                _class_id = bp.read_int32()
+                                self._read_node(_class_id, block.skin, bp)
 
                         if (block.flags & 0x100000) != 0:
                             block.params = bp.read_int32()
@@ -284,7 +330,7 @@ class Gbx(object):
 
                     i += 1
 
-                self.positions['block_data'] = bp.pop_info()
+                self.positions['block_data'] = bp.pop_info()              
             elif cid == 0x03043022:
                 bp.skip(4)
             elif cid == 0x03043024:
@@ -302,12 +348,12 @@ class Gbx(object):
                 if idx >= 0 and idx not in self.classes:
                     _class_id = bp.read_int32()
                     self._read_node(_class_id, idx, bp)
-            elif cid == 0x03043028:
-                archive_gm_cam_val = bp.read_int32()
-                if archive_gm_cam_val == 1:
-                    bp.skip(1 + 4 * 7)
+            # elif cid == 0x03043028:
+            #     archive_gm_cam_val = bp.read_int32()
+            #     if archive_gm_cam_val == 1:
+            #         bp.skip(1 + 4 * 7)
 
-                bp.read_string()
+            #     bp.read_string()
             elif cid == 0x0304302A:
                 bp.read_int32()
             elif cid == 0x3043040:
@@ -375,7 +421,7 @@ class Gbx(object):
             elif cid == 0x03043025:
                 bp.skip(16)
             elif cid == 0x03043026:
-                idx = bp.read_uint32()
+                idx = bp.read_int32()
                 if idx >= 0 and idx not in self.classes:
                     _class_id = bp.read_int32()
                     self._read_node(_class_id, idx, bp)
@@ -403,7 +449,11 @@ class Gbx(object):
             elif cid == 0x0303F006:
                 bp.skip(4)
                 self.read_ghost(game_class, bp)
-            elif cid == 0x03093014:
+            elif cid == 0x03093002 or cid == 0x2403F002:
+                map_gbx_size = bp.read_uint32()
+                data = bytes(bp.read(map_gbx_size))
+                game_class.track = Gbx(data)                
+            elif cid == 0x03093014 or cid == 0x2403F014:
                 bp.skip(4)
                 num_ghosts = bp.read_uint32()
                 for _ in range(num_ghosts):
@@ -411,23 +461,101 @@ class Gbx(object):
                     if idx >= 0 and idx not in self.classes:
                         _class_id = bp.read_uint32()
                         self._read_node(_class_id, idx, bp)
-
-            elif cid == 0x03093002:
-                map_gbx_size = bp.read_uint32()
-                data = bytes(bp.read(map_gbx_size))
-                game_class.track = Gbx(data)
-            elif cid == 0x03092005:
+            elif cid == 0x03043021 or cid == 0x24003021:
+                for _ in range(3):
+                    idx = bp.read_int32()
+                    if idx >= 0 and idx not in self.classes:
+                        _class_id = bp.read_int32()
+                        self._read_node(_class_id, idx, bp)
+            elif cid == 0x03043022 or cid == 0x24003022:
+                bp.skip(4)
+            elif cid == 0x03043024 or cid == 0x24003024:
+                version = bp.read_byte()
+                if version >= 3:
+                    bp.skip(32)
+                
+                path = bp.read_string()
+                if len(path) > 0 and version >= 1:
+                    bp.read_string()
+            elif cid == 0x03043025 or cid == 0x24003025:
+                bp.skip(4 * 4)
+            elif cid == 0x03043026 or cid == 0x24003026:
+                idx = bp.read_int32()
+                if idx >= 0 and idx not in self.classes:
+                    _class_id = bp.read_int32()
+                    self._read_node(_class_id, idx, bp)                
+            elif cid == 0x03092005 or cid == 0x2401B005:
                 game_class.race_time = bp.read_uint32()
-            elif cid == 0x03092008:
+            elif cid == 0x03092008 or cid == 0x2401B008:
                 game_class.num_respawns = bp.read_uint32()
-            elif cid == 0x03092009:
+            elif cid == 0x03092009 or cid == 0x2401B009:
                 game_class.light_trail_color = bp.read_vec3()
-            elif cid == 0x0309200A:
+            elif cid == 0x0309200A or cid == 0x2401B00A:
                 game_class.stunts_score = bp.read_uint32()
-            elif cid == 0x0309200E:
+            # The GBX spec is wrong here.
+            # 0x0309200B contains how many CP times there are
+            # after that, there is a list of (uint32, uint32)
+            # tuples, the first element is the time, the second
+            # is unknown
+            elif cid == 0x0309200B or cid == 0x2401B00B:
+                num = bp.read_uint32()
+                cp_times = []
+                for i in range(num):
+                    cp_times.append(bp.read_uint32())
+                    bp.skip(4)
+                
+                game_class.cp_times = cp_times
+            elif cid == 0x309200C or cid == 0x2401B00C:
+                bp.skip(4)
+            elif cid == 0x309200E or cid == 0x2401B00E:
                 game_class.uid = bp.read_string_lookback()
-            elif cid == 0x0309200F:
+
+                # For TM2
+                if ('version' in self.__replay_header_info
+                    and self.__replay_header_info['version'] >= 8):
+                    game_class.login = bp.read_string()
+            elif cid == 0x309200F or cid == 0x2401B00F:
                 game_class.login = bp.read_string()
+            elif cid == 0x3092010 or cid == 0x2401B010:
+                bp.read_string_lookback()
+            elif cid == 0x3092012 or cid == 0x2401B012:
+                bp.skip(4 + 16)
+            elif cid == 0x3092013 or cid == 0x2401B013:
+                bp.skip(4 + 4)
+            elif cid == 0x3092014 or cid == 0x2401B014:
+                bp.skip(4)
+            elif cid == 0x3092015 or cid == 0x2401B015:
+                bp.read_string_lookback()
+            elif cid == 0x3092018 or cid == 0x2401B018:
+                bp.read_string_lookback()
+                bp.read_string_lookback()
+                bp.read_string_lookback()
+            elif cid == 0x3092019 or cid == 0x03092025 or cid == 0x2401B019:
+                if cid == 0x03092025:
+                    bp.skip(4)
+
+                game_class.events_duration = bp.read_uint32()
+                bp.skip(4)
+
+                num_control_names = bp.read_uint32()
+                game_class.control_names = []
+                for _ in range(num_control_names):
+                    game_class.control_names.append(bp.read_string_lookback())
+                    
+                num_control_entries = bp.read_uint32()
+                bp.skip(4)
+                for _ in range(num_control_entries):
+                    time = bp.read_uint32() - 100000
+                    name = game_class.control_names[bp.read_byte()]
+                    entry = headers.ControlEntry(time, name, bp.read_uint16(), bp.read_uint16()) 
+                    game_class.control_entries.append(entry)
+                
+                bp.read_string()
+                bp.skip(3 * 4)
+                bp.read_string()
+                bp.skip(4)
+            elif cid == 0x309201c:
+                bp.skip(32)
             elif skipsize != -1:
                 bp.skip(skipsize)
                 cid = oldcid
@@ -478,5 +606,5 @@ class Gbx(object):
             else:
                 sample_sz = sample_sizes[i]
 
-            gr.pos = sample_pos + sample_sz
+            record.raw_data = gr.read(sample_sz - (gr.pos - sample_pos))
             game_class.records.append(record)

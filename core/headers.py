@@ -1,5 +1,6 @@
 from core.block_utils import BID, BX, BY, BZ, BROT, BFLAGS, get_block_name
 from core.stadium_blocks import STADIUM_BLOCKS
+import math
 
 
 class CGameHeader(object):
@@ -35,6 +36,7 @@ class MapBlock(object):
         self.name = None
         self.rotation = 0
         self.position = Vector3()
+        self.speed = 0
         self.flags = 0
         self.params = 0
         self.skin_author = None
@@ -55,12 +57,11 @@ class MapBlock(object):
             'Rotation: {}\n'
             'Position: {}\n'
             'Flags: {}\n'
-        ).format(self.name, self.rotation, self.position, bin(self.flags))
+        ).format(self.name, self.rotation, self.position.as_array(), bin(self.flags))
 
     def to_tup(self):
         try:
-            terrain_bit = 1 if (self.flags & 0x1000 != 0) else 0
-            return (STADIUM_BLOCKS[self.name], self.position.x, self.position.y, self.position.z, self.rotation, terrain_bit)
+            return (STADIUM_BLOCKS[self.name], self.position.x, self.position.y, self.position.z, self.rotation, self.flags, self.speed)
         except KeyError:
             return None
 
@@ -112,6 +113,8 @@ class CGameChallenge(CGameHeader):
         self.req_unlock = 0
         self.blocks = []
         self.items = []
+        self.password_hash = None
+        self.password_crc = None
 
 
 class CGameBlockItem(CGameHeader):
@@ -143,9 +146,11 @@ class CGameReplayRecord(CGameCommon):
     def __init__(self, id):
         self.id = id
         self.track = None
+        self.nickname = None
+        self.driver_login = None
 
 
-class CGameGhost(object):
+class CGameGhost(CGameHeader):
     def __init__(self, id):
         self.id = id
         self.records = []
@@ -161,8 +166,18 @@ class CGameCtnGhost(CGameGhost):
         self.stunts_score = 0
         self.uid = None
         self.login = None
+        self.cp_times = []
+        self.control_entries = []
+        self.control_names = []
+        self.events_duration = 0
         super(CGameCtnGhost, self).__init__(id)
 
+class ControlEntry(object):
+    def __init__(self, time, event_name, enabled, flags):
+        self.time = time
+        self.event_name = event_name
+        self.enabled = enabled
+        self.flags = flags
 
 class GhostSampleRecord(object):
     BLOCK_SIZE_XZ = 32
@@ -176,6 +191,13 @@ class GhostSampleRecord(object):
         self.speed = speed
         self.vel_heading = vel_heading
         self.vel_pitch = vel_pitch
+
+    @property
+    def display_speed(self):
+        if self.speed == 0x8000:
+            return 0
+
+        return int(abs(math.exp(self.speed / 1000.0) * 3.6))
 
     def get_block_position(self, xoff=0, yoff=0, zoff=0):
         x = int((self.position.x + xoff) / self.BLOCK_SIZE_XZ)
