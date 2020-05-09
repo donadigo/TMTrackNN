@@ -224,6 +224,141 @@ std::vector<Block> Builder::build(const int length, const bool failSafe,
 	return map.filterBlocks(map.center(), { GRASS_BLOCK });
 }
 
+GameMap & Builder::getMap()
+{
+	return map;
+}
+
+int Builder::startRest(const int length)
+{
+	lengthRest = length;
+	map.clear();
+	blacklistRest.clear();
+	currentBlockPredsRest.clear();
+
+	const int fixedY = randomRange(1, 5);
+	const Vector3i startVector = { 15, fixedY, 15 };
+	map.setStartVector(startVector);
+
+	return fixedY;
+}
+
+BuilderRestMessage Builder::step()
+{
+	int mapLength = map.length();
+	if (mapLength == 0) {
+		map.add(getRandomStartBlock());
+		BuilderRestMessage msg;
+		msg.type = ADD_BLOCK;
+		msg.block = map[map.length() - 1];
+		return msg;
+	}
+
+	if (mapLength == lengthRest) {
+		BuilderRestMessage msg;
+		msg.type = FINISHED;
+		return msg;
+	}
+
+	bool end = mapLength == lengthRest - 1;
+
+	int bSize = blacklistRest.size();
+	if (bSize >= MAX_BLACKLIST_SIZE || (bSize == 1 && end)) {
+		int back;
+		if (mapLength > lengthRest - 5) {
+			back = 5;
+		}
+		else if (end) {
+			back = 10;
+		}
+		else {
+			back = randomRange<int>(2, 6);
+		}
+
+		int endIdx = (std::min)(mapLength - 1, back);
+		if (endIdx > 0) {
+			map().erase(map().end() - endIdx - 1, map().end());
+		}
+
+		end = false;
+		blacklistRest.clear();
+		currentBlockPredsRest = {};
+
+		BuilderRestMessage msg;
+		msg.type = REMOVE_BLOCKS;
+		msg.nRemoved = mapLength - map.length();
+
+		return msg;
+	}
+
+	int overrideBlock = end ? FINISH_LINE_BLOCK : -1;
+
+	Float2D XBlock, XPosition;
+	prepareInputs(XBlock, XPosition);
+
+	auto pair = predictNextBlock(XBlock, XPosition, currentBlockPredsRest, blacklistRest, overrideBlock);
+	auto block = pair.first;
+	currentBlockPredsRest = pair.second;
+
+	map.add(block);
+	map.update();
+	auto decoded = map.getDecoded();
+
+#define BACKTRACK() {\
+	blacklistRest.push_back(block.id); \
+	map.pop(); \
+	BuilderRestMessage msg; \
+	msg.type = SKIP; \
+	return msg; \
+}
+		if (map.exceedsSize()) {
+			BACKTRACK();
+		}
+
+		int minY = decoded.back().pos.y;
+		auto occ = block_utils::getOccupiedBlockVectors({ decoded.back() });
+		if (!occ.empty()) {
+			for (auto off : occ) {
+				minY = (std::min)(minY, off.y);
+			}
+		}
+
+		if (minY > 1 &&
+			(block.id == GRASS_BLOCK ||
+				std::find(blocks::GROUND_BLOCKS.begin(), blocks::GROUND_BLOCKS.end(), block.id) != blocks::GROUND_BLOCKS.end())) {
+			BACKTRACK();
+		}
+
+		std::vector<Block> current(decoded.begin(), decoded.end() - 1);
+		if (block_utils::intersects(current, decoded.back()) ||
+			(block.id == FINISH_LINE_BLOCK && !end)) {
+			BACKTRACK();
+		}
+
+		if (map.length() >= 2) {
+			auto prev = map[map.length() - 2];
+			if (pdata.score(prev, block) < 5) {
+				BACKTRACK();
+			}
+		}
+#undef BACKTRACK
+
+	blacklistRest.clear();
+	currentBlockPredsRest = {};
+
+	BuilderRestMessage msg;
+	msg.type = ADD_BLOCK;
+	msg.block = block;
+
+	return msg;
+}
+
+void Builder::blacklistPrevRest()
+{
+	blacklistRest.push_back(map[map.length() - 1].id);
+	map.pop();
+}
+
 void Builder::stop()
 {
 	running = false;

@@ -80,7 +80,7 @@ void GameMap::update()
 			block.id,
 			block.pos.add(prev.pos),
 			block.rot
-			});
+		});
 	}
 
 	occupied = block_utils::getOccupiedBlockVectors(decoded);

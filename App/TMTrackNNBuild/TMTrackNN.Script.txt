@@ -1,0 +1,398 @@
+#RequireContext CMapEditorPlugin
+#Include "TextLib" as TL
+
+#Const C_API "http://127.0.0.1:60050/builder"
+#Const C_NBlocks 100
+#Const C_Variety 1.2
+
+declare Int3 PrevCoord;
+declare Int3 InitialCoord;
+declare Int3[Void] Track;
+declare CHttpRequest[Void] Requests;
+
+Text GetKey(Text Contents, Text Key) {
+	declare Lines = TL::Split("\n", Contents);
+	if (Lines.count == 0) {
+		return "";
+	}
+	
+	foreach (Line in Lines) {
+		declare Tokens = TL::Split("=", Line);
+		if (Tokens[0] == Key) {
+			return Tokens[1];
+		}
+	}
+	
+	return "";
+}
+
+Text CreateGetResult(Text Url) {
+	declare Req = Http.CreateGet(Url);
+	Requests.add(Req);
+	wait(Req.IsCompleted);
+
+	Requests.remove(Req);
+	if (Req.StatusCode != 200) {
+		return "";
+	}
+	
+	declare Result = Req.Result;
+	Http.Destroy(Req);
+	return Result;
+}
+
+Void CreatePost(Text Url) {
+	declare Req = Http.CreatePost(Url, "");
+	Requests.add(Req);
+	
+	wait(Req.IsCompleted);
+	
+	Requests.remove(Req);
+	Http.Destroy(Req);	
+}
+
+Void WaitForEditor() {
+	wait(IsEditorReadyForRequest);
+}
+
+Void WaitForServer() {
+	log("WAIT");
+	declare BuilderPresent = False;
+	while (!BuilderPresent) {
+		declare Result = CreateGetResult(C_API ^ "/status");
+		BuilderPresent = GetKey(Result, "Status") == "Running";
+		log(BuilderPresent);
+		sleep(100);
+	}
+}
+
+Integer StartBuilder() {
+	declare Result = CreateGetResult(C_API ^ "/start?length=100");
+	if (Result == "") {
+		return -1;
+	}
+	
+	return TL::ToInteger(GetKey(Result, "FixedY"));
+}
+
+
+Boolean __PlaceBlock(CBlockModel BlockModel, Int3 Coord, ::CardinalDirections Dir, CBlock LastBlock) {
+	if (BlockModel.IsRoad && LastBlock != Null && LastBlock.BlockModel.IsRoad) {
+		declare FromCoord = LastBlock.Coord;
+		declare ToCoord = Coord;
+		
+		WaitForEditor();
+		return PlaceRoadBlocks(BlockModel, FromCoord, ToCoord);
+	} else {
+		WaitForEditor();
+		return PlaceBlock(BlockModel, Coord, Dir);
+	}
+	
+	return True;
+}
+
+Int3 AddInt3(Int3 A, Int3 B) {
+	return <A.X + B.X, A.Y + B.Y, A.Z + B.Z>;
+}
+
+CBlock GetBlockAtIndex(Integer Index) { 
+	if (Index >= 0 && Index < Track.count) {
+		return GetBlock(Track[Index]);
+	}
+	
+	return Null;
+}
+
+Void MoveTrack(Int3 Offset) {
+	declare CBlockModel[Int3] TBlockModels;
+	declare ::CardinalDirections[Int3] TDirections;
+	declare i = 0;
+	
+	/**
+	 * We will save all the things needed
+	 * to rebuild the track, clear the map
+	 * and then place all the blocks
+	 * again but with updated coords.
+	 */
+	for (i, 0, Track.count - 1) {
+		declare Block <=> GetBlock(Track[i]);
+		if (Block == Null) {
+			Track[i] = AddInt3(Track[i], Offset);
+			continue;
+		}
+		
+		declare BlockModel <=> GetBlockModelFromName(Block.BlockModel.Name);
+		if (BlockModel == Null) {
+			Track[i] = AddInt3(Track[i], Offset);
+			continue;
+		}
+		
+		declare Coord = AddInt3(Block.Coord, Offset);
+		declare Dir = Block.Direction;
+		
+		/* 
+		 * For some reason ManiaScript throws a compilation error
+		 * when trying to pass Dir directly to PlaceBlock.
+		 * (Is it because it's const?)
+		 */
+		declare _Dir = ::CardinalDirections::North;
+		if (Dir == ::CardinalDirections::East) {
+			_Dir = ::CardinalDirections::East;
+		} else if (Dir == ::CardinalDirections::South) {
+			_Dir = ::CardinalDirections::South;			
+		} else if (Dir == ::CardinalDirections::West) {
+			_Dir = ::CardinalDirections::West;							
+		}
+		
+		TBlockModels[Coord] = BlockModel;
+		TDirections[Coord] = _Dir;
+		Track[i] = Coord;
+	}
+	
+	WaitForEditor();
+	RemoveAll();
+	
+	PrevCoord = InitialCoord;
+	for (i, 0, Track.count - 1) {
+		declare Coord = Track[i];
+		if (TBlockModels.existskey(Coord) && TDirections.existskey(Coord)) {
+			declare BlockModel <=> TBlockModels[Coord];
+			declare Dir = TDirections[Coord];
+			declare LastBlock = GetBlockAtIndex(i - 1);
+			
+			WaitForEditor();
+			__PlaceBlock(BlockModel, Coord, Dir, LastBlock);
+			PrevCoord = Coord;
+		}
+	}
+}
+
+Int3 CheckFixTrackBounds(CBlockModel BlockModel, Int3 NextCoord) {
+	declare Offset = <0, 0, 0>;
+	declare BBMin = <0, 0, 0>;
+	declare BBMax = <0, 0, 0>;	
+	if (BlockModel.VariantAir != Null) {
+		BBMin = BlockModel.VariantAir.OffsetBoundingBoxMin;
+		BBMax = BlockModel.VariantAir.OffsetBoundingBoxMax;
+	} else if (BlockModel.VariantGround != Null) {
+		BBMin = BlockModel.VariantGround.OffsetBoundingBoxMin;	
+		BBMax = BlockModel.VariantGround.OffsetBoundingBoxMax;
+	}
+
+	if (NextCoord.X - BBMin.X < 0) {
+		Offset.X = -NextCoord.X - BBMin.X;
+	}
+
+	if (NextCoord.X + BBMax.X > Map.Size.X - 1) {
+		Offset.X = Map.Size.X - 1 - (NextCoord.X + BBMax.X);
+	}
+	
+	if (NextCoord.Y - BBMin.Y < CollectionGroundY) {
+		Offset.Y = -NextCoord.Y - BBMin.Y;		
+	}
+	
+	if (NextCoord.Y + BBMax.Y > Map.Size.Y - 1) {
+		Offset.Y = Map.Size.Y - 1 - (NextCoord.Y + BBMax.Y);
+	}
+	
+	if (NextCoord.Z - BBMin.Z < 0) {
+		Offset.Z = -NextCoord.Z - BBMin.Z;
+	}
+
+	if (NextCoord.Z + BBMax.Z > Map.Size.Z - 1) {
+		Offset.Z = Map.Size.Z - 1 - (NextCoord.Z + BBMax.Z);
+	}
+
+	if (Offset.X != 0 || Offset.Y != 0 || Offset.Z != 0) {
+		MoveTrack(Offset);
+	}
+	
+	return Offset;
+}
+
+Void HandleAddBlock(Text Result) {
+	declare Name = GetKey(Result, "Name");
+
+	declare X = TL::ToInteger(GetKey(Result, "X")) + PrevCoord.X; 
+	declare Y = TL::ToInteger(GetKey(Result, "Y")) + PrevCoord.Y;
+	declare Z = TL::ToInteger(GetKey(Result, "Z")) + PrevCoord.Z;
+  declare R = TL::ToInteger(GetKey(Result, "R"));
+	
+	declare Dir = ::CardinalDirections::North;
+	if (R == 1) {
+		Dir = ::CardinalDirections::East;
+	} else if (R == 2) {
+		Dir = ::CardinalDirections::South;		
+	} else if (R == 3) {
+		Dir = ::CardinalDirections::West;				
+	}
+
+	// Not existing in TM2 anymore
+	if (Name == "StadiumPlatformToRoadMain") {
+		Name = "StadiumCircuitToRoadMain";
+	}
+
+	declare Coord = <X, Y, Z>;
+	declare BlockModel = GetBlockModelFromName(Name);
+	if (BlockModel != Null) {
+			declare Offset = CheckFixTrackBounds(BlockModel, Coord);
+			Coord = AddInt3(Coord, Offset);
+
+			// These blocks have different name in TM2 at ground level
+			if (Y == CollectionGroundY) {
+				if (Name == "StadiumFabricPillarCornerOut") {
+					BlockModel = GetBlockModelFromName("StadiumFabricRampCornerOut");
+				} else if (Name == "StadiumFabricPillarAir") {
+					BlockModel = GetBlockModelFromName("StadiumFabricRamp");
+				} else if (Name == "StadiumFabricPillarCornerInAir") {
+					BlockModel = GetBlockModelFromName("StadiumFabricRampCornerIn");				
+				}
+			} 
+	
+			declare LastBlock = GetBlockAtIndex(Track.count - 1);
+			if (!__PlaceBlock(BlockModel, Coord, Dir, LastBlock)) {
+				CreatePost(C_API ^ "/place_block_failed");
+				return;
+			}
+	}
+
+	Track.add(Coord);
+	PrevCoord = Coord;
+}
+
+Void HandleRemoveBlocks(Text Result) {
+	declare NRemoved = TL::ToInteger(GetKey(Result, "NRemoved"));
+	for (i, 0, NRemoved - 1) {
+		declare Coord = Track[Track.count - 1];
+		
+		WaitForEditor();
+		if (!RemoveBlock(Coord)) {
+			log("FAILED TO REMOVE");
+		}
+		Track.removekey(Track.count - 1);
+	}
+	
+	if (Track.count > 0) {
+		PrevCoord = Track[Track.count - 1];
+	} else {
+		PrevCoord = InitialCoord;
+	}
+}
+
+Boolean Next() {
+	declare Result = CreateGetResult(C_API ^ "/next");
+	if (Result == "") {
+		return False;
+	}
+
+	declare Type = GetKey(Result, "Type");
+	if (Type == "Finished") {
+		return False;
+	}
+	
+	if (Type == "AddBlock") {
+		HandleAddBlock(Result);
+	} else if (Type == "RemoveBlocks") {
+		HandleRemoveBlocks(Result);
+	}
+	
+	return True;
+}
+
+main() {
+/*	ManialinkText = """<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<manialink version="3" name="Plugin:AutoGhostBlocks">
+<stylesheet>
+	<style class="lblName" posn="-32.5" valign="center2" textsize="2" scale=".9" textcolor="000"/>
+	<style class="entryValue" posn="27.5" sizen="10 4" halign="right" valign="center2" textsize="2" textemboss="1" textcolor="FFF"/>
+	<style class="btnReset" posn="32.5" sizen="5 5" halign="right" valign="center" style="Icons128x32_1" substyle="RT_Laps"/>
+	<style class="txtWarning" sizen="70 10" scale=".9" halign="center" textsize="2" textcolor="000" autonewline="1"/>
+</stylesheet>
+
+<frame id="Frame_GeneratorWindow" posn="0 0 14" hidden="0">
+	<frame posn="-124 78 1">
+		<quad posn="0 0" halign="center" sizen="74 15" style="Bgs1InRace" substyle="BgTitle3_4"/>
+		<label posn="0 -7.5 1" halign="center" valign="center2" style="TextTitle3" text="TMTrackNN"/>
+		
+		<!-- Warning message and generate buttons -->
+		<frame posn="0 -14">
+			
+			<label posn="-0.074 -5.2" class="txtWarning" text="WARNING: Generating a new map will remove all your current edition progress."/>
+			<label posn="17.2 -26" halign="center" style="CardButtonSmallS" text="Generate" ScriptEvents="1" id="Label_BtnGeneratePlay"/>
+			<label posn="-12.2 -26" halign="center" style="CardButtonSmallS" text="Close" ScriptEvents="1" id="Label_BtnCancel"/>
+		</frame>
+		
+		<!-- Properties window -->
+		<frame id="Frame_Advanced" posn="0 -41">
+			<quad halign="center" sizen="70 31.6" style="Bgs1" substyle="BgTitlePage" pos="0 25"/>
+			
+			
+			<frame posn=".5 -9 1">
+				<label class="lblName" text="Number of blocks to place" pos="-32.5 20"/>
+				<entry class="entryValue" id="Entry_NBlocks" default="{{{C_NBlocks}}}" pos="27.5 20"/>
+				<quad class="btnReset" ScriptEvents="1" id="Quad_BtnResetNBlocks" pos="32.5 20"/>
+			</frame>
+			<frame posn=".5 -14 1">
+				<label class="lblName" text="Variety" pos="-32.5 21"/>
+				<entry class="entryValue" id="Entry_Variety" default="{{{C_Variety}}}" pos="27.5 20"/>
+				<quad class="btnReset" ScriptEvents="1" id="Quad_BtnResetVariety" pos="32.5 20"/>
+			</frame>
+			<frame posn=".5 -19 1">
+				
+				
+				
+			</frame>
+			<frame posn=".5 -24 1">
+				
+				
+				
+			</frame>
+			<frame posn=".5 -30 1">
+				
+				
+				
+			</frame>
+			<frame posn=".5 -35 1">
+				
+				
+				
+			</frame>
+			<frame posn=".5 -41 1">
+				
+				
+				
+			</frame>
+			
+			<frame posn=".5 -46 1">
+				
+				
+				
+			</frame>
+		</frame>
+	</frame>
+</frame>
+</manialink>""";*/
+
+	log("TMTrackNN Builder starts");
+	foreach (Req in Requests) {
+		Http.Destroy(Req);
+	}
+	
+	Requests.clear();
+	Track.clear();
+	
+	//WaitForServer();	
+	log("Connected to server!");
+	
+	RemoveAll();
+	PreloadAllBlocks();
+	
+	declare FixedY = StartBuilder();
+	
+	InitialCoord = <15, FixedY+8, 15>;
+	PrevCoord = InitialCoord;
+
+	while (Next()) {
+		yield;
+	}
+}

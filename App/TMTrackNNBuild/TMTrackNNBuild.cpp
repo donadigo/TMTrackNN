@@ -1,4 +1,8 @@
-﻿#include <iostream>
+﻿#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#include <iostream>
 #include <tensorflow/c_api.h>
 #include <Windows.h>
 #include <chrono>

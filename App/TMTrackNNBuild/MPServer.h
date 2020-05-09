@@ -1,6 +1,8 @@
 #pragma once
 #include <memory>
 #include "Builder.h"
+#include <httplib.h>
+
 class MPServer
 {
 public:
@@ -13,8 +15,7 @@ private:
 	void readBuild();
 	void writeString(const std::string& str);
 	std::string readString(int & bytesRecv);
-	SOCKET mainSocket;
-	SOCKET clientSocket;
 	std::unique_ptr<Builder> builder;
+	httplib::Server server;
 };
 

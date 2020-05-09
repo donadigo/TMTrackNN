@@ -1,8 +1,9 @@
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#pragma once
 #include "MPServer.h"
 #include "Builder.h"
-#pragma comment(lib, "Ws2_32.lib")
+#include "Utils.h"
+
+#define START "start"
 
 #define TMTRACKNN_PORT 60050
 #define MESSAGE_TYPE_BUFSIZE 4
@@ -16,6 +17,36 @@ enum MessageType {
 MPServer::MPServer(std::unique_ptr<Builder> builder):
 	builder(std::move(builder))
 {
+	server.Get("/builder/start", [&](const httplib::Request& req, httplib::Response& res) {
+		auto lenStr = req.get_param_value("length");
+		if (!lenStr.empty()) {
+			std::cout << "Start builder.\n";
+			int fixedY = this->builder->startRest(std::atoi(lenStr.c_str()));
+			res.set_content("FixedY=" + std::to_string(fixedY), "text/plain");
+
+			//while (this->builder->step().type != FINISHED);
+
+			//std::string outputPath = "F:\\ManiaplanetData\\Maps\\TMTrackNN\\Step.Challenge.Gbx";
+			//std::string mapName = "Step";
+			//auto map = this->builder->getMap();
+			//map.update();
+			//auto track = map.filterBlocks(map.center(), { GRASS_BLOCK });
+			//utils::saveTrack(track, outputPath, mapName, 1);
+		}
+	});
+
+	server.Get("/builder/next", [&](const httplib::Request& req, httplib::Response& res) {
+		BuilderRestMessage msg = this->builder->step();
+		res.set_content(msg.toString(), "text/plain");
+	});
+
+	server.Post("/builder/place_block_failed", [&](const httplib::Request& req, httplib::Response& res) {
+		this->builder->blacklistPrevRest();
+	});
+
+	server.Get("/builder/status", [&](const httplib::Request& req, httplib::Response& res) {
+		res.set_content("Status=Running", "text/plain");
+	});
 }
 
 
@@ -25,10 +56,10 @@ MPServer::~MPServer()
 
 void MPServer::waitForClient()
 {
-	clientSocket = SOCKET_ERROR;
-	while (clientSocket == SOCKET_ERROR) {
-		clientSocket = accept(mainSocket, NULL, NULL);
-	}
+	//clientSocket = SOCKET_ERROR;
+	//while (clientSocket == SOCKET_ERROR) {
+	//	clientSocket = accept(mainSocket, NULL, NULL);
+	//}
 }
 
 void MPServer::readBuild()
@@ -44,11 +75,11 @@ void MPServer::readBuild()
 
 std::string MPServer::readString(int& bytesRecv)
 {
-	char buf[64];
-	bytesRecv = recv(clientSocket, buf, 64, 0);
-	if (bytesRecv <= 0) {
-		return "";
-	}
+	//char buf[64];
+	//bytesRecv = recv(clientSocket, buf, 64, 0);
+	//if (bytesRecv <= 0) {
+	//	return "";
+	//}
 
 	// TODO
 	return "";
@@ -57,30 +88,33 @@ std::string MPServer::readString(int& bytesRecv)
 
 int MPServer::readInt32(int& bytesRecv)
 {
-	char buf[4];
+	/*char buf[4];
 	bytesRecv = recv(clientSocket, buf, 4, 0);
 	if (bytesRecv != 4) {
 		return -1;
 	}
 
-	return (int)*buf;
+	return (int)*buf;*/
+	return 0;
 }
 
 void MPServer::writeString(const std::string& str)
 {
-	int size = str.size();
-	char* buf = static_cast<char*>(static_cast<void*>(&size));
-	//send(clientSocket, buf, 4, 0);
-	//for (auto c : str) {
-	//	char b[1] = { c };
-	//	send(clientSocket, b, 1, 0);
-	//}
-	send(clientSocket, str.data(), size, 0);
+	//int size = str.size();
+	//char* buf = static_cast<char*>(static_cast<void*>(&size));
+	////send(clientSocket, buf, 4, 0);
+	////for (auto c : str) {
+	////	char b[1] = { c };
+	////	send(clientSocket, b, 1, 0);
+	////}
+	//send(clientSocket, str.data(), size, 0);
 }
 
 void MPServer::run()
 {
-	WSADATA wsaData;
+	std::cout << "Server run\n";
+	server.listen ("127.0.0.1", TMTRACKNN_PORT);
+	/*WSADATA wsaData;
 	int res = WSAStartup(MAKEWORD(2, 2), &wsaData);
 	if (res != NO_ERROR) {
 		std::cerr << "Failed to startup!\n";
@@ -139,7 +173,7 @@ void MPServer::run()
 		case CANCEL_BUILD:
 			builder->stop();
 			break;
-		}
+		}*/
 
 		//for (int i = 0; i < bytesRecv; i++) {
 		//	std::cout << buf[i];
@@ -148,5 +182,6 @@ void MPServer::run()
 		//send(clientSocket, buf, bytesRecv, 0);
 
 		//std::cout << "\n";
-	}
+	//}
 }
+
