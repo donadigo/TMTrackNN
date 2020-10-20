@@ -30,6 +30,7 @@ class GbxType(IntEnum):
     GAME_SKIN = 0x03031000
     GAME_PLAYER_PROFILE = 0x0308C000
     MW_NOD = 0x01001000
+    UNKNOWN = 0x0
 
 
 class GbxLoadError(Exception):
@@ -62,7 +63,10 @@ class Gbx(object):
 
         if self.version >= 3:
             self.class_id = self.root_parser.read_uint32()
-            self.type = GbxType(self.class_id)
+            try:
+                self.type = GbxType(self.class_id)
+            except ValueError:
+                self.type = GbxType.UNKNOWN
 
             if self.version >= 6:
                 self._read_user_data()
@@ -70,8 +74,22 @@ class Gbx(object):
             self.num_nodes = self.root_parser.read_uint32()
 
         self.num_external_nodes = self.root_parser.read_uint32()
-        if self.num_external_nodes != 0:
-            raise GbxLoadError('External dependencies are not supported yet')
+        if self.num_external_nodes > 0:
+            self.root_parser.read_uint32()
+            self.__read_sub_folder()
+            for node in range(self.num_external_nodes):
+                flags = self.root_parser.read_uint32()
+                if (flags & 4) == 0:
+                    self.root_parser.read_string()
+                else:
+                    self.root_parser.read_uint32()
+
+                self.root_parser.skip(4)
+                if self.version >= 5:
+                    self.root_parser.skip(4)
+
+                if (flags & 4) == 0:
+                    self.root_parser.skip(4)
 
         self.root_parser.push_info()
         self.positions['data_size'] = self.root_parser.pop_info()
@@ -83,6 +101,13 @@ class Gbx(object):
 
         bp = ByteReader(self.data[:])
         self._read_node(self.class_id, -1, bp)
+
+    def __read_sub_folder(self):
+        num_sub_folders = self.root_parser.read_uint32()
+        for folder in range(num_sub_folders):
+            self.root_parser.read_string()
+            self.__read_sub_folder()
+
 
     def find_raw_class_id(self, class_id):
         bp = ByteReader(self.data[:])
@@ -130,7 +155,46 @@ class Gbx(object):
         self.root_parser.pos = user_data_pos + self.user_data_size
 
     def _read_header_entry(self, cid, size):
-        if cid == 0x03043003 or cid == 0x24003003:
+        if cid == 0x03043002 or cid == 0x24003002:
+            version = self.root_parser.read_byte()
+            if version < 3:
+                for _ in range(3):
+                    self.root_parser.read_string_lookback()
+                self.root_parser.read_string()
+
+            self.root_parser.skip(4)
+            if version >= 1:
+                self.root_parser.skip(16)
+                if version == 2:
+                    self.root_parser.skip(4)
+
+                if version >= 4:
+                    self.root_parser.skip(4)
+                    if version >= 5:
+                        self.root_parser.skip(4)
+
+                        if version == 6:
+                            self.root_parser.skip(4)
+                        
+                        if version >= 7:
+                            self.root_parser.read_uint32()
+
+                            if version >= 9:
+                                self.root_parser.skip(4)
+
+                                if version >= 10:
+                                    self.root_parser.skip(4)
+
+                                    if version >= 11:
+                                        self.root_parser.skip(4)
+                                        
+                                        if version >= 12:
+                                            self.root_parser.skip(4)
+
+                                            if version >= 13:
+                                                self.root_parser.skip(8)
+
+        elif cid == 0x03043003 or cid == 0x24003003:
             p = self.root_parser.pos
             self.root_parser.read_byte()
             for _ in range(3):
@@ -161,6 +225,10 @@ class Gbx(object):
                     self.__replay_header_info['driver_login'] = self.root_parser.read_string()
                     self.root_parser.skip(1)
                     self.root_parser.read_string_lookback()
+        elif cid == 0x03093002 or cid == 0x2403F002:
+            self.root_parser.skip(8)
+            for _ in range(4):
+                self.root_parser.read_string()
         else:
             self.root_parser.skip(size)
 
@@ -540,8 +608,13 @@ class Gbx(object):
                 num_control_names = bp.read_uint32()
                 game_class.control_names = []
                 for _ in range(num_control_names):
-                    game_class.control_names.append(bp.read_string_lookback())
+                    name = bp.read_string_lookback()
+                    if name != '':
+                        game_class.control_names.append(name)
                     
+                if len(game_class.control_names) == 0:
+                    continue
+
                 num_control_entries = bp.read_uint32()
                 bp.skip(4)
                 for _ in range(num_control_entries):
@@ -556,6 +629,8 @@ class Gbx(object):
                 bp.skip(4)
             elif cid == 0x309201c:
                 bp.skip(32)
+            elif cid == 0x03093004 or cid == 0x2403f004:
+                bp.skip(4 * 4)
             elif skipsize != -1:
                 bp.skip(skipsize)
                 cid = oldcid
