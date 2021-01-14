@@ -1,13 +1,10 @@
 import os
 import pickle
 import sys
-import threading
-import time
 
 from keras.models import load_model
 
-import core.stadium_blocks as bl
-import core.gbx as gbx
+import pygbx.stadium_blocks as bl
 from builder import Builder
 from config import load_config
 

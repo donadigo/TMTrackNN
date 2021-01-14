@@ -1,6 +1,6 @@
-# from core.blocks import BLOCKS
-# from core.blocks import GROUND_BLOCKS
-# from core.block_offsets import BLOCK_OFFSETS
+# from pygbx.stadium_blocks import STADIUM_BLOCKS
+# from pygbx.stadium_block_offsets import STADIUM_BLOCK_OFFSETS
+# from block_utils import GROUND_BLOCKS
 
 # contents = 'const std::string BLOCKS[] = {\n'
 # for name in BLOCKS:

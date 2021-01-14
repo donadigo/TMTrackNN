@@ -15,8 +15,8 @@ This will generate a track using the provided block and position models that wil
 
 ## Dependencies
 * Python 3
-* Keras
-* python-lzo (through pip)
+* keras
+* pygbx
 * numpy
 * Not required: pygame or Gtk+3 and GLib for track visualization
 

@@ -1,4 +1,4 @@
-from core.stadium_blocks import STADIUM_BLOCKS
+from pygbx.stadium_blocks import STADIUM_BLOCKS
 
 TECH_BLOCK_WEIGHTS = [1.0] * len(STADIUM_BLOCKS)
 

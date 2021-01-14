@@ -1,14 +1,12 @@
-import pickle
 import random
 
 import numpy as np
 
-from core.block_utils import (BFLAGS, BID, BROT, BX, BY, BZ, one_hot_bid,
-                              block_to_vec)
-from core.stadium_blocks import STADIUM_BLOCKS, START_LINE_BLOCK, FINISH_LINE_BLOCK, GROUND_BLOCKS
-from core.headers import Vector3
-from core.track_utils import (intersects, occupied_track_vectors,
-                              rotate_track_tuples)
+from block_utils import BID, BROT, BX, BY, BZ, one_hot_bid, block_to_vec
+from pygbx.stadium_blocks import STADIUM_BLOCKS
+from block_utils import START_LINE_BLOCK, FINISH_LINE_BLOCK, GROUND_BLOCKS
+from pygbx.headers import Vector3
+from track_utils import intersects, occupied_track_vectors, rotate_track_tuples
 from gamemap import GameMap
 from tech_block_weights import TECH_BLOCK_WEIGHTS
 

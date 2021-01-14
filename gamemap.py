@@ -1,5 +1,5 @@
-from core.block_utils import BFLAGS, BID, BROT, BX, BY, BZ
-from core.track_utils import occupied_track_vectors
+from block_utils import BID, BROT, BX, BY, BZ
+from track_utils import occupied_track_vectors
 
 
 class GameMap(object):

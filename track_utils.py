@@ -1,8 +1,8 @@
 import numpy as np
-from core.stadium_blocks import STADIUM_BLOCKS, CONNECT_MAP
-from core.block_utils import BID, BROT, BX, BY, BZ, BFLAGS, get_block_name
-from core.headers import MapBlock, Vector3
-from core.stadium_block_offsets import STADIUM_BLOCK_OFFSETS, DYNAMIC_GROUND_OFFSETS
+from pygbx.stadium_blocks import STADIUM_BLOCKS
+from block_utils import DYNAMIC_GROUND_OFFSETS, CONNECT_MAP, BID, BROT, BX, BY, BZ, BFLAGS, block_from_tup, get_block_name, block_to_tup
+from pygbx.headers import Vector3
+from pygbx.stadium_block_offsets import STADIUM_BLOCK_OFFSETS
 from sklearn.preprocessing import MinMaxScaler
 
 
@@ -43,10 +43,10 @@ def rotate_track(blocks, rotation):
 def rotate_track_tuples(tblocks, rotation):
     blocks = []
     for tup in tblocks:
-        block = MapBlock.from_tup(tup)
+        block = block_from_tup(tup)
         blocks.append(block)
 
-    return [block.to_tup() for block in rotate_track(blocks, rotation)]
+    return [block_to_tup(block) for block in rotate_track(blocks, rotation)]
 
 
 def get_cardinal_position(pos, rotation):

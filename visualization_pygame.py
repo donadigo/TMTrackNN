@@ -1,5 +1,5 @@
 import pygame
-from core.stadium_blocks import EDITOR_IDS
+from block_utils import EDITOR_IDS
 import pickle
 import os
 import sys

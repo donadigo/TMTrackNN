@@ -8,9 +8,9 @@ import sys
 import argparse
 
 from models import build_pos_model
-from core.stadium_blocks import STADIUM_BLOCKS
-from core.block_utils import BID, BX, BY, BZ, BROT, EMPTY_BLOCK, BFLAGS, one_hot_rotation, pad_block_sequence, block_to_vec
-from core.track_utils import rotate_track_tuples, fit_data_scaler, vectorize_track
+from pygbx.stadium_blocks import STADIUM_BLOCKS
+from block_utils import BID, BX, BY, BZ, BROT, EMPTY_BLOCK, BFLAGS, one_hot_rotation, pad_block_sequence, block_to_vec
+from track_utils import rotate_track_tuples, fit_data_scaler, vectorize_track
 from config import load_config
 
 import os

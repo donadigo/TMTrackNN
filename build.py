@@ -22,8 +22,7 @@ args = parser.parse_args()
 
 import numpy as np
 from keras.models import load_model
-from sklearn.preprocessing import MinMaxScaler
-from core.stadium_blocks import STADIUM_BLOCKS
+from pygbx.stadium_blocks import STADIUM_BLOCKS
 
 from config import load_config
 from builder import Builder

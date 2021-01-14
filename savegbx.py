@@ -1,15 +1,14 @@
 import os
 import pickle
-import random
 import struct
 import sys
 import lzo
 from enum import Enum
 
-import core.gbx as gbx
-from core.block_utils import BID, BROT, BX, BY, BZ, get_block_name
-from core.stadium_blocks import STADIUM_BLOCKS, BASE_BLOCKS
-from core.track_utils import populate_flags, rotate_track
+from pygbx import Gbx, GbxType
+from block_utils import BASE_BLOCKS, BID, BROT, BX, BY, BZ, get_block_name
+from pygbx.stadium_blocks import STADIUM_BLOCKS
+from track_utils import populate_flags, rotate_track
 
 
 class Action(Enum):
@@ -118,8 +117,8 @@ def save_gbx(options, template, output):
             rlen = len(rep)
         return s[:offset] + rep + s[offset + rlen:]
 
-    temp_gbx = gbx.Gbx(template)
-    challenge = temp_gbx.get_class_by_id(gbx.GbxType.CHALLENGE)
+    temp_gbx = Gbx(template)
+    challenge = temp_gbx.get_class_by_id(GbxType.CHALLENGE)
     common = temp_gbx.get_class_by_id(0x03043003)
 
     if 'rotation' in options:
@@ -209,8 +208,11 @@ def save_gbx(options, template, output):
     user_data_diff = len(common.track_name) - len(map_name)
     info = temp_gbx.positions['50606083']
     if info.valid:
-        new_chunk_size = temp_gbx.root_parser.read_info(
-            info, temp_gbx.root_parser.read_uint32) - user_data_diff
+        prev = temp_gbx.root_parser.pos
+        temp_gbx.root_parser.pos = info.pos
+        new_chunk_size = temp_gbx.root_parser.read_uint32() - user_data_diff
+        temp_gbx.root_parser.pos = prev
+
         data = data_replace(data, struct.pack(
             'I', new_chunk_size), info.pos, info.size)
 

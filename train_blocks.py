@@ -3,16 +3,13 @@ import argparse
 import os
 import pickle
 import random
-import sys
 
 from keras.callbacks import ModelCheckpoint, TensorBoard
 from keras.models import load_model
 
 from models import build_block_model
-from core.stadium_blocks import STADIUM_BLOCKS
-from core.block_utils import (BID, BROT, BX, BY, BZ, EMPTY_BLOCK, one_hot_bid,
-                              one_hot_rotation, pad_block_sequence, block_to_vec)
-from core.track_utils import fit_data_scaler
+from pygbx.stadium_blocks import STADIUM_BLOCKS
+from block_utils import (BID, one_hot_bid, pad_block_sequence)
 from config import load_config
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'

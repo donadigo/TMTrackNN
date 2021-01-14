@@ -1,6 +1,6 @@
-from keras.layers.core import Dense, Dropout
-from keras.layers import LSTM, Bidirectional, concatenate, Flatten
-from keras.models import Input, Model, Sequential, load_model
+from keras.layers.core import Dense
+from keras.layers import LSTM, concatenate
+from keras.models import Input, Model, Sequential
 
 def build_block_model(lookback, inp_len):
     model = Sequential()

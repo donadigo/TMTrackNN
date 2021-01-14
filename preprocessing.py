@@ -4,13 +4,11 @@ import pickle
 import json
 from multiprocessing import pool
 
-from core.stadium_block_offsets import STADIUM_BLOCK_OFFSETS
-from core.block_utils import BFLAGS, BID, BROT, BX, BY, BZ
-from core.stadium_blocks import STADIUM_BLOCKS
-from core.gbx import Gbx, GbxType
-from core.headers import Vector3
-from core.track_utils import (create_pattern_data, fit_data_scaler,
-                              occupied_track_positions)
+from pygbx.stadium_blocks import STADIUM_BLOCKS
+from pygbx import Gbx, GbxType
+from pygbx.headers import Vector3
+from track_utils import create_pattern_data, fit_data_scaler, occupied_track_positions
+from block_utils import block_to_tup
 
 
 # def show_plot(trace):
@@ -87,7 +85,7 @@ def process(replay_gbx, trace_offset):
 
     filtered = []
     for block in challenge.blocks:
-        t = block.to_tup()
+        t = block_to_tup(block)
         if not t:
             continue
 
