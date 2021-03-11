@@ -1,0 +1,18 @@
+﻿  QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly.
+  BlockModel.cpp
+  Builder.cpp
+  GameMap.cpp
+  main.cpp
+  MainWindow.cpp
+  PatternData.cpp
+C:\tmn\pyplanet\tmtrackNN\App\QtGuiApplication1\main.cpp(1,10): fatal error C1083: Cannot open include file: 'QtWidgets/QApplication': No such file or directory
+C:\tmn\pyplanet\tmtrackNN\App\QtGuiApplication1\MainWindow.h(3,10): fatal error C1083: Cannot open include file: 'QWidget': No such file or directory (compiling source file MainWindow.cpp)
+C:\tmn\pyplanet\tmtrackNN\App\QtGuiApplication1\PatternData.h(3,10): fatal error C1083: Cannot open include file: 'nlohmann\json.hpp': No such file or directory (compiling source file PatternData.cpp)
+C:\tmn\pyplanet\tmtrackNN\App\QtGuiApplication1\Session.h(2,10): fatal error C1083: Cannot open include file: 'tensorflow/c_api.h': No such file or directory (compiling source file BlockModel.cpp)
+C:\tmn\pyplanet\tmtrackNN\App\QtGuiApplication1\Session.h(2,10): fatal error C1083: Cannot open include file: 'tensorflow/c_api.h': No such file or directory (compiling source file Builder.cpp)
+  PositionModel.cpp
+  Session.cpp
+  tf.cpp
+C:\tmn\pyplanet\tmtrackNN\App\QtGuiApplication1\Session.h(2,10): fatal error C1083: Cannot open include file: 'tensorflow/c_api.h': No such file or directory (compiling source file PositionModel.cpp)
+C:\tmn\pyplanet\tmtrackNN\App\QtGuiApplication1\Session.h(2,10): fatal error C1083: Cannot open include file: 'tensorflow/c_api.h': No such file or directory (compiling source file Session.cpp)
+C:\tmn\pyplanet\tmtrackNN\App\QtGuiApplication1\tf.h(7,10): fatal error C1083: Cannot open include file: 'tensorflow/c_api.h': No such file or directory (compiling source file tf.cpp)

@@ -89,7 +89,7 @@ class GenerateThread(QThread):
 
         if track and self.save_fname:
             save_gbx({'track_data': track, 'map_name': self.map_name},
-                     os.path.join(data_path, 'Template.Challenge.Gbx'), self.save_fname)
+                     os.path.join(data_path, 'Template.Map.Gbx'), self.save_fname)
             self.status_sig.emit('Done.', False)
 
     def stop(self):

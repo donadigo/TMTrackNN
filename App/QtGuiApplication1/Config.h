@@ -12,7 +12,7 @@ const float MIN_VECTOR[3] = { 0.48148148, 0.57575758, 0.43478261 };
 #define PATTERN_DATA_PATH "F:/Python/tmtools/pattern_data.json"
 #define TF_PATH "C:/tensorflow/tensorflow.dll"
 #define SAVEGBX_PATH "F:/Python/SaveGBX/dist/savegbx/savegbx.exe"
-#define TEMPLATE_PATH "F:/Python/tmtools/data/Template.Challenge.Gbx"
+#define TEMPLATE_PATH "F:/Python/tmtools/data/Template.Map.Gbx"
 #define ICON_PATH "F:/Python/TMTrackNN2/icon/icon.ico"
 
 #else
@@ -21,6 +21,6 @@ const float MIN_VECTOR[3] = { 0.48148148, 0.57575758, 0.43478261 };
 #define PATTERN_DATA_PATH "data/pattern_data.json"
 #define TF_PATH "tensorflow.dll"
 #define SAVEGBX_PATH "savegbx/savegbx.exe"
-#define TEMPLATE_PATH "data/Template.Challenge.Gbx"
+#define TEMPLATE_PATH "data/Template.Map.Gbx"
 #define ICON_PATH "data/icon.ico"
 #endif

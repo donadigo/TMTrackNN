@@ -60,5 +60,5 @@ builder = Builder(block_model, pos_model,
 track = builder.build(args.length, verbose=False, save=False,
                       progress_callback=progress_callback, map_size=(32, 32, 32))
 print(track)
-save_gbx({'track_data': track}, 'data/Template.Challenge.Gbx', args.output)
+save_gbx({'track_data': track}, 'data/Template.Map.Gbx', args.output)
 print(f'Track saved to {args.output}.')
