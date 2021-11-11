@@ -5,7 +5,7 @@ import sys
 import lzo
 from enum import Enum
 
-from pygbx import Gbx, GbxType
+from pygbx import Gbx, GbxType, CGameChallenge
 from block_utils import BASE_BLOCKS, BID, BROT, BX, BY, BZ, get_block_name
 from pygbx.stadium_blocks import STADIUM_BLOCKS
 from track_utils import populate_flags, rotate_track
@@ -29,6 +29,66 @@ class Action(Enum):
 
         return Action.UNKNOWN
 
+class GbxSaveContext(object):
+    def __init__(self, seen_lookback: bool):
+        self.seen_lookback = seen_lookback
+        self.stored_strings = []
+        self.data = bytearray()
+
+    def write_lookback_string(self, s: str):
+        lbs = bytearray()
+        if not self.seen_lookback:
+            ver = str(struct.pack('I', CURRENT_VER))
+            lbs += ver
+            self.seen_lookback = True
+
+        if s not in self.stored_strings:
+            idx = struct.pack('I', BASE_LBS_IDX)
+            lbs += idx
+            lbs += struct.pack('I', len(s))
+            lbs += struct.pack(str(len(s)) + 's', bytes(s, 'utf-8'))
+            self.stored_strings.append(s)
+        else:
+            idx = struct.pack('I', BASE_LBS_IDX + self.stored_strings.index(s))
+            lbs += idx
+
+        self.data.extend(lbs)
+
+    def write_string(self, s: str):
+        self.write_uint32(len(s))
+        self.data.extend(struct.pack(str(len(s)) + 's', bytes(s, 'utf-8')))
+
+    def write_byte(self, b: int):
+        self.data.extend(struct.pack('B', b))
+
+    def write_uint32(self, i: int):
+        self.data.extend(struct.pack('I', i))
+
+    def append_to_string_store(self, s: str):
+        if s not in self.stored_strings:
+            self.stored_strings.append(s)
+
+    def write_block(self, block: tuple):
+        bname = get_block_name(block[BID], STADIUM_BLOCKS)
+        self.write_lookback_string(bname)
+        self.write_byte(block[BROT])
+        self.write_byte(max(0, block[BX]))
+        self.write_byte(max(1, block[BY]))
+        self.write_byte(max(0, block[BZ]))
+
+        flags = 0
+        if len(block) > 5:
+            flags = block[5]
+            if flags & 0x8000:
+                flags &= 0x0fff
+
+            if flags & 0x100000:
+                flags &= 0x0fffff
+
+        self.write_uint32(flags)
+
+    def reset(self):
+        self.data = bytearray()
 
 CURRENT_VER = 3
 BASE_LBS_IDX = 1 << 30
@@ -38,55 +98,7 @@ MOODS = ['Sunrise', 'Day', 'Sunset', 'Night']
 MOOD_WEIGHTS = [0.3, 0.5, 0.1, 0.1]
 
 
-def append_to_store(stored_strings, s):
-    if s not in stored_strings:
-        stored_strings.append(s)
-
-
-def write_lookback_string(stored_strings, seen_lookback, s):
-    lbs = bytearray()
-    if not seen_lookback:
-        ver = str(struct.pack('I', CURRENT_VER))
-        lbs += ver
-        seen_lookback = True
-
-    if s not in stored_strings:
-        idx = struct.pack('I', BASE_LBS_IDX)
-        lbs += idx
-        lbs += struct.pack('I', len(s))
-        lbs += struct.pack(str(len(s)) + 's', bytes(s, 'utf-8'))
-        stored_strings.append(s)
-    else:
-        idx = struct.pack('I', BASE_LBS_IDX + stored_strings.index(s))
-        lbs += idx
-
-    return lbs
-
-def write_block(stored_strings, seen_lookback, block):
-    bstr = bytearray()
-
-    bname = get_block_name(block[BID], STADIUM_BLOCKS)
-    bstr += write_lookback_string(stored_strings, seen_lookback, bname)
-
-    bstr += struct.pack('B', block[BROT])
-    bstr += struct.pack('B', max(0, block[BX]))
-    bstr += struct.pack('B', max(1, block[BY]))
-    bstr += struct.pack('B', max(0, block[BZ]))
-
-    flags = 0
-    if len(block) > 5:
-        flags = block[5]
-        if flags & 0x8000:
-            flags &= 0x0fff
-
-        if flags & 0x100000:
-            flags &= 0x0fffff
-
-    bstr += struct.pack('I', flags)
-    return bstr
-
-
-def rotate_track_challenge(challenge, rotation):
+def rotate_track_challenge(challenge: CGameChallenge, rotation: int) -> list:
     track = []
     blocks = rotate_track(challenge.blocks[:], rotation)
 
@@ -103,14 +115,13 @@ def rotate_track_challenge(challenge, rotation):
     return track
 
 
-def get_map_name(output):
+def get_map_name(output: str) -> str:
     name = os.path.basename(output)
     return name.split('.')[0]
 
 
-def save_gbx(options, template, output):
-    stored_strings = []
-    seen_lookback = True
+def save_gbx(options: dict, template: str, output: str):
+    context = GbxSaveContext(True)
 
     def data_replace(s, rep, offset, rlen=-1):
         if rlen == -1:
@@ -130,13 +141,13 @@ def save_gbx(options, template, output):
 
     track = populate_flags(track)
 
-    append_to_store(stored_strings, challenge.map_uid)
-    append_to_store(stored_strings, challenge.environment)
-    append_to_store(stored_strings, challenge.map_author)
-    append_to_store(stored_strings, challenge.map_name)
-    append_to_store(stored_strings, challenge.mood)
-    append_to_store(stored_strings, challenge.env_bg)
-    append_to_store(stored_strings, challenge.env_author)
+    context.append_to_string_store(challenge.map_uid)
+    context.append_to_string_store(challenge.environment)
+    context.append_to_string_store(challenge.map_author)
+    context.append_to_string_store(challenge.map_name)
+    context.append_to_string_store(challenge.mood)
+    context.append_to_string_store(challenge.env_bg)
+    context.append_to_string_store(challenge.env_author)
 
     udata = bytes(temp_gbx.data)
 
@@ -149,14 +160,13 @@ def save_gbx(options, template, output):
 
     # Modifying body
     # Blocks
-    blocks_chunk_str = bytearray()
-    blocks_chunk_str += struct.pack('I', len(track))
+    context.write_uint32(len(track))
     for block in track:
-        blocks_chunk_str += write_block(stored_strings, seen_lookback, block)
+        context.write_block(block)
 
     info = temp_gbx.positions['block_data']
     if info.valid:
-        udata = data_replace(udata, blocks_chunk_str,
+        udata = data_replace(udata, context.data,
                              info.pos, info.size)
 
     # The mood
@@ -168,19 +178,18 @@ def save_gbx(options, template, output):
     #         stored_strings, seen_lookback, mood), info.pos, info.size)
 
     # Map name in editor
+    context.reset()
     if 'map_name' in options:
         map_name = options['map_name']
     else:
         map_name = get_map_name(output)
-    map_name_str = bytearray()
-    map_name_str += struct.pack('I', len(map_name))
-    map_name_str += struct.pack(str(len(map_name)) +
-                                's', bytes(map_name, 'utf-8'))
+    
+    context.write_string(map_name)
 
     # The map name
     info = temp_gbx.positions['map_name']
     if info.valid:
-        udata = data_replace(udata, map_name_str, info.pos, info.size)
+        udata = data_replace(udata, context.data, info.pos, info.size)
 
     compressed = lzo.compress(bytes(udata), 1, False)
 
@@ -202,7 +211,7 @@ def save_gbx(options, template, output):
     # The track name in map chooser
     info = temp_gbx.positions['track_name']
     if info.valid:
-        data = data_replace(data, map_name_str, info.pos, info.size)
+        data = data_replace(data, context.data, info.pos, info.size)
 
     # New chunk size since track name length could change
     user_data_diff = len(common.track_name) - len(map_name)

@@ -35,7 +35,19 @@ train_data = pickle.load(train_data_file)
 if args.num_tracks:
     train_data = train_data[:args.num_tracks]
 
-def process_entry(blocks, X, y):
+def process_entry(blocks: list, X: list, y: list):
+    '''
+    Converts the block sequence to X and y matrices given a lookback.
+
+    A training sample is added for each block in the sequence.
+    X = blocks[:i]
+    y = blocks[i]
+
+    Args:
+        blocks (list): the list of blocks to process
+        X (list): the X's to populate
+        y (list): the y's to populate
+    '''
     if len(blocks) < lookback:
         return
 
@@ -54,7 +66,14 @@ def process_entry(blocks, X, y):
         y.append(one_hot_bid(block_out[BID], len(STADIUM_BLOCKS)))
 
 
-def track_sequence_generator(batch_size):
+def track_sequence_generator(batch_size: int):
+    '''
+    The sequence generator for training.
+
+    Generates block sequences of maximum length batch_size,
+    by randomly choosing an entry in the training data and
+    processing it.
+    '''
     while True:
         X = []
         y = []

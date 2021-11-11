@@ -1,10 +1,9 @@
 # TMTrackNN
 Building TrackMania tracks with neural networks.
 
-This is a hobby project for fun to learn Python and also to learn how neural nets work. It is not meant to work and probably never will.
-
+This is a hobby project for fun to learn Python and also to learn how neural nets work.
 ## What?
-The aim is to generate new maps, tracks using NN's for a racing game called [TrackMania](https://www.trackmania.com/). I created this project a while ago for fun and mostly for educational purposes. [Medium post.](https://medium.com/@donadigo/tmtracknn-generating-trackmania-tracks-with-neural-networks-146db058e7cb)
+The aim is to generate new maps, tracks using NN's for a racing game called [TrackMania](https://www.trackmania.com/). I created this project a while ago for fun and mostly for educational purposes. [Blog post.](https://donadigo.github.io/tmtracknn)
 
 ## Generating new tracks
 You can use `build.py` to generate new tracks and save them directly to a .Gbx file e.g:
@@ -16,9 +15,14 @@ This will generate a track using the provided block and position models that wil
 ## Dependencies
 * Python 3
 * keras
-* pygbx
+* pygbx (requires installing the [python-lzo wheel](https://www.lfd.uci.edu/~gohlke/pythonlibs/#python-lzo) on Windows)
 * numpy
-* Not required: pygame or Gtk+3 and GLib for track visualization
+* sklearn
+* tensorflow
+
+Additional (not required):
+* pygame or Gtk+3 and GLib for track visualization
+* PyQt5 for the Python GUI `gui.py`
 
 ## Dataset
 This repo doesn't contain the dataset itself used to train the models in the `models/` directory as it is unusual to provide entire datasets with code in one repo. There is however a preprocessed version of the dataset used in the `data/train_data.pkl` file that you can use for futher training.

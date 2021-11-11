@@ -4,10 +4,7 @@ from gi.repository import Gtk, GdkPixbuf, GLib
 
 import pickle
 import os, sys
-import time, threading
 import pygbx.stadium_blocks as bl
-from config import load_config
-from track_utils import rotate_track_tuples
 
 IMG_SIZE = 30
 

@@ -1,7 +1,7 @@
 import os
 import json
 
-def load_config(config_path):
+def load_config(config_path: str) -> object:
     d = os.path.dirname(config_path)
     config = json.loads(open(config_path, 'r').read())
     config['train_data'] = os.path.join(d, config['train_data'])

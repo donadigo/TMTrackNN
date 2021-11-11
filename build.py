@@ -47,7 +47,7 @@ scaler_file = open(config['position_scaler'], 'rb')
 scaler = pickle.load(scaler_file)
 
 
-def progress_callback(completed, total):
+def progress_callback(completed: int, total: int):
     percentage = int(completed / float(total) * 100)
     sys.stdout.write(f'Progress: {percentage}% [{completed} / {total}]\r')
     sys.stdout.flush()
@@ -57,8 +57,7 @@ pos_model = load_model(args.pos_model)
 builder = Builder(block_model, pos_model,
                   config['lookback'], None, pattern_data, scaler, temperature=args.temperature)
 
-track = builder.build(args.length, verbose=False, save=False,
-                      progress_callback=progress_callback, map_size=(32, 32, 32))
+track = builder.build(args.length, verbose=False, progress_callback=progress_callback, map_size=(32, 32, 32))
 print(track)
 save_gbx({'track_data': track}, 'data/Template.Challenge.Gbx', args.output)
 print(f'Track saved to {args.output}.')

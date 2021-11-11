@@ -4,12 +4,11 @@ from keras.models import load_model
 import numpy as np
 import pickle
 import random
-import sys
 import argparse
 
 from models import build_pos_model
 from pygbx.stadium_blocks import STADIUM_BLOCKS
-from block_utils import BID, BX, BY, BZ, BROT, EMPTY_BLOCK, BFLAGS, one_hot_rotation, pad_block_sequence, block_to_vec
+from block_utils import BX, BZ, BROT, one_hot_rotation, pad_block_sequence, block_to_vec
 from track_utils import rotate_track_tuples, fit_data_scaler, vectorize_track
 from config import load_config
 
@@ -49,7 +48,24 @@ def append_blocks(blocks_in, block_out, X, y_pos, y_rot):
     y_rot.append(one_hot_rotation(block_out[BROT]))
 
 
-def process_entry(blocks, X, y_pos, y_rot):
+def process_entry(blocks: list, X: list, y_pos: list, y_rot: list):
+    '''
+    Converts the block sequence to X y_pos and y_rot matrices given a lookback.
+
+    A training sample is added for each block in the sequence.
+    X = blocks[:i]
+    y_pos = blocks[i] (position)
+    y_rot = blocks[i] (rotation)
+
+    The position and rotation of the last block are filled
+    with -1's as this is what the network will predict.
+
+    Args:
+        blocks (list): the list of blocks to process
+        X (list): the X's to populate
+        y_pos (list): the position y's to populate
+        y_rot (list): the rotation y's to populate
+    '''
     if len(blocks) < lookback:
         return
 
@@ -64,7 +80,21 @@ def process_entry(blocks, X, y_pos, y_rot):
         append_blocks(blocks_in, block_out, X, y_pos, y_rot)
 
 
-def track_sequence_generator(batch_size):
+def track_sequence_generator(batch_size: int):
+    '''
+    The sequence generator for training.
+
+    Generates block sequences of maximum length batch_size,
+    by randomly choosing an entry in the training data and
+    processing it.
+
+    While generating, the track will be rotated
+    by a random cardinal rotation and then vectorized to
+    remove absolute block coordinates from the data.
+
+    Args:
+        batch_size (int): the batch size to use
+    '''
     while True:
         X = []
         y_pos = []

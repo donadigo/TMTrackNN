@@ -1,9 +1,14 @@
+from pygbx.headers import Vector3
 from block_utils import BID, BROT, BX, BY, BZ
 from track_utils import occupied_track_vectors
 
 
 class GameMap(object):
-    def __init__(self, size, start_pos):
+    '''
+    The GameMap class is responsible for managing the track as it is
+    built in the main building loop. 
+    '''
+    def __init__(self, size: Vector3, start_pos: Vector3):
         self.size = size
         self.track = []
         self.decoded = []
