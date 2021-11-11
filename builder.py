@@ -1,4 +1,5 @@
 import random
+from keras.models import Sequential
 
 import numpy as np
 
@@ -15,7 +16,24 @@ ROTATE_LEN = 4
 
 
 class Builder(object):
-    def __init__(self, block_model, position_model, lookback, seed_data, pattern_data, scaler, temperature=1.2, reset=True):
+    '''
+    The Builder class implements the main building loop that consists of:
+        1. predicting the next block type
+        2. predicting the position and rotation of the next block that is going to be placed
+        3. validating model output with provided pattern data
+        4. validating track characteristics such as its size and placement
+        5. backtracking if the networks get stuck and cannot predict a good enough outcome
+        6. Reporting progress to the user of the class
+
+    Args:
+        block_model (keras.models.Sequential): the block model to use
+        position_model (keras.models.Sequential): the positionmodel model to use
+        lookback (int): how many previous blocks are fed into the network at a time
+        seed_data (list): optional sample data to evaluate network preformance
+        temperature (float): the temperature to use
+    '''
+    def __init__(self, block_model: Sequential, position_model: Sequential, lookback: int,
+                seed_data: list, pattern_data: dict, scaler: object, temperature: float=1.2):
         self.block_model = block_model
         self.position_model = position_model
         self.lookback = lookback
@@ -24,13 +42,33 @@ class Builder(object):
         self.scaler = scaler
         self.inp_len = len(STADIUM_BLOCKS) + POS_LEN + ROTATE_LEN
         self.temperature = temperature
-        self.reset = reset
         self.running = False
         self.gmap = None
 
     @staticmethod
     def random_start_block():
+        '''
+        Returns a start block in a random direction.
+
+        Returns:
+            tuple: the randomized start block
+        '''
         return (START_LINE_BLOCK, 0, 0, 0, random.randrange(0, 4), 0)
+
+    @staticmethod
+    def unpack_position_preds_vector(preds: tuple):
+        '''
+        Unpacks position and rotation prediction from the model prediction.
+
+        Args:
+            preds (tuple): (position_preds: np.array, rotation_preds: np.array)
+
+        Returns:
+            tuple: the unpacked position and rotation prediction
+        '''
+        pos_vec = [int(round(axis)) for axis in preds[0][0]]
+        pos_rot = np.argmax(preds[1][0])
+        return pos_vec, pos_rot
 
     # Source:
     # https://github.com/keras-team/keras/blob/master/examples/lstm_text_generation.py#L66
@@ -43,12 +81,27 @@ class Builder(object):
         probas = np.random.multinomial(1, preds, 1)
         return np.argmax(probas)
 
-    def unpack_position_preds_vector(self, preds):
-        pos_vec = [int(round(axis)) for axis in preds[0][0]]
-        pos_rot = np.argmax(preds[1][0])
-        return pos_vec, pos_rot
+    def predict_next_block(self, X_block: np.array, X_position: np.array, block_override: int=-1,
+                        blacklist: list=[], block_preds: np.array=None):
+        '''
+        Predicts the next block in the main building loop.
 
-    def predict_next_block(self, X_block, X_position, block_override=-1, blacklist=[], block_preds=None):
+        Asks the block model for prediction of the next block type
+        based on the encoded previous blocks and then feeds the
+        output to the position model.
+
+        Args:
+            X_block (np.array): encoded block types of shape (1, lookback, blocks_len)
+            X_position (np.array): encoded blocks of shape (1, lookback, inp_len)
+            block_override (int): the block type to use instead of predicting it
+            blacklist (list): the list containing block IDs that should not 
+                              be considered when sampling
+            block_preds (list): cached array of block predictions from the previous
+                                prediction, used when backtracking
+            
+            Returns:
+                tuple: (predicted_block: tuple, block_preds: np.array)
+        '''
         if block_override != -1:
             next_block = block_override
         else:
@@ -56,32 +109,46 @@ class Builder(object):
                 block_preds = self.block_model.predict(X_block)[0]
                 block_preds = block_preds * TECH_BLOCK_WEIGHTS
 
-            for bid in blacklist:
-                block_preds[bid - 1] = 0
-
+            block_preds[np.asarray(blacklist, dtype=int) - 1] = 0
             next_block = self.sample(block_preds) + 1
 
-        for i in range(1, self.lookback):
-            X_position[0][i - 1] = X_position[0][i]
-
-        X_position[0][-1] = block_to_vec((next_block, 0, 0, 0, 0), self.inp_len, len(STADIUM_BLOCKS), self.scaler, False)
+        X_position = np.roll(X_position, -1, 1)
+        X_position[0, -1] = block_to_vec((next_block, 0, 0, 0, 0), self.inp_len, len(STADIUM_BLOCKS), self.scaler, False)
 
         pos_preds = self.position_model.predict(X_position)
         pos_vec, pos_rot = self.unpack_position_preds_vector(pos_preds)
-        return (next_block, pos_vec[0], pos_vec[1], pos_vec[2], pos_rot), block_preds
+        return (next_block, *pos_vec, pos_rot), block_preds
 
-    def sample_seed(self, seed_len):
+    def sample_seed(self, seed_len: int) -> list:
+        '''
+        Generates a random sample from seed data. Used for
+        evaluating network performance when completing e.g training data samples.
+
+        Args:
+            seed_len (int): track length to seed
+        
+        Returns:
+            list: the track from the seed
+        '''
         seed_idx = random.randrange(0, len(self.seed_data))
         seed = self.seed_data[seed_idx][1][:seed_len]
         return seed
 
-    def score_prediction(self, prev_block, next_block):
-        prev_block = (prev_block[BID], 0, 0, 0, prev_block[BROT])
-        normalized = rotate_track_tuples(
-            [prev_block, next_block], 4 - prev_block[BROT] % 4)
+    def score_prediction(self, prev_block: tuple, next_block: tuple) -> int:
+        '''
+        Scores the prediction using the previous block and the block that
+        was just placed, using pattern data.
 
-        prev_block = normalized[0]
-        next_block = normalized[1]
+        Args:
+            prev_block (tuple): the previous block
+            next_block (tuple): the block that was just placed
+
+        Returns:
+            int: the prediction score
+        '''
+        prev_block = (prev_block[BID], 0, 0, 0, prev_block[BROT])
+        prev_block, next_block = rotate_track_tuples([prev_block, next_block], 4 - prev_block[BROT] % 4)
+
         next_block = (next_block[BID], next_block[BX] - prev_block[BX], next_block[BY] -
                       prev_block[BY], next_block[BZ] - prev_block[BZ], next_block[BROT])
 
@@ -92,44 +159,58 @@ class Builder(object):
             return 0
 
     def prepare_inputs(self):
+        '''
+        Prepares the block and position vector encodings used by predict_next_block.
+
+        Returns:
+            tuple: (X_block: np.array, X_position: np.array)
+        '''
         X_block = np.zeros((1, self.lookback, len(STADIUM_BLOCKS)), dtype=np.bool)
         X_position = np.zeros((1, self.lookback, self.inp_len))
 
         blocks = self.gmap.track[-self.lookback:]
         i = -1
         for block in reversed(blocks):
-            X_position[0][i] = block_to_vec(block, self.inp_len, len(STADIUM_BLOCKS), self.scaler, True)
-            X_block[0][i] = one_hot_bid(block[BID], len(STADIUM_BLOCKS))
+            X_position[0, i] = block_to_vec(block, self.inp_len, len(STADIUM_BLOCKS), self.scaler, True)
+            X_block[0, i] = one_hot_bid(block[BID], len(STADIUM_BLOCKS))
             i -= 1
 
         return X_block, X_position
 
     def stop(self):
+        '''
+        Stops the building process.
+        '''
         self.running = False
 
-    def build(self, 
-        track_len,
-        use_seed=False,
-        failsafe=True,
-        verbose=True,
-        save=True,
-        put_finish=True,
-        progress_callback=None,
-        map_size=(20, 8, 20)):
+    def build(self, track_len: int, use_seed: bool=False, failsafe: bool=True, verbose: bool=True,
+            put_finish: bool=True, progress_callback=None, map_size: tuple=(20, 8, 20)):
+        '''
+        Builds the track according to the parameters.
 
+        Args:
+            track_len (int): the track length, in blocks
+            use_seed (bool): whether to use a random seed from the seed data
+            failsafe (bool): whether to enable various checking heuristics
+            verbose (bool): print additional information while building
+            put_finish (bool): whether to put a finish as the last block
+            progress_callback: a function that is called whenever a new block is placed
+            map_size (tuple): the map size to build the track in
+        
+        Returns:
+            list: the resulting track
+        '''
         self.running = True
 
         fixed_y = random.randrange(1, 7)
-        if not self.gmap or self.reset:
-            self.gmap = GameMap(
-                Vector3(map_size[0], map_size[1], map_size[2]), Vector3(0, fixed_y, 0))
+        if not self.gmap:
+            self.gmap = GameMap(Vector3(map_size[0], map_size[1], map_size[2]), Vector3(0, fixed_y, 0))
 
         if use_seed and self.seed_data:
             self.gmap.track = self.sample_seed(3)
         elif len(self.gmap) == 0:
             self.gmap.add(self.random_start_block())
 
-        print(self.gmap.track)
         self.gmap.update()
 
         blacklist = []
@@ -139,7 +220,7 @@ class Builder(object):
                 return None
 
             end = len(self.gmap) == track_len - 1
-            if len(blacklist) >= 10 or (len(blacklist) == 1 and end) and self.reset:
+            if len(blacklist) >= 10 or (len(blacklist) == 1 and end):
                 if verbose:
                     print('More than 10 fails, going back.')
 
@@ -159,10 +240,11 @@ class Builder(object):
 
             X_block, X_position = self.prepare_inputs()
 
-            override_block = FINISH_LINE_BLOCK if end and put_finish else -1
+            block_override = FINISH_LINE_BLOCK if end and put_finish else -1
 
             next_block, current_block_preds = self.predict_next_block(
-                X_block[:], X_position[:], override_block, blacklist=blacklist, block_preds=current_block_preds)
+                X_block[:], X_position[:], block_override=block_override, blacklist=blacklist, block_preds=current_block_preds
+            )
 
             self.gmap.add(next_block)
             decoded = self.gmap.decoded

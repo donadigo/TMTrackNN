@@ -78,11 +78,7 @@ def rotate_track_tuples(tblocks: list, rotation: int) -> list:
     Returns:
         list: the rotated blocks
     '''
-    blocks = []
-    for tup in tblocks:
-        block = block_from_tup(tup)
-        blocks.append(block)
-
+    blocks = [block_from_tup(tup) for tup in tblocks]
     return [block_to_tup(block) for block in rotate_track(blocks, rotation)]
 
 

@@ -1,6 +1,7 @@
 from pygbx.stadium_blocks import STADIUM_BLOCKS
+import numpy as np
 
-TECH_BLOCK_WEIGHTS = [1.0] * len(STADIUM_BLOCKS)
+TECH_BLOCK_WEIGHTS = np.ones((len(STADIUM_BLOCKS)))
 
 # StadiumRoadMain
 TECH_BLOCK_WEIGHTS[6-1] = 0.5

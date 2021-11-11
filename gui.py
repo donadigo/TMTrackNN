@@ -2,15 +2,18 @@ import os
 import pickle
 import sys
 
-from PyQt5.QtCore import QObject, QPoint, Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QIcon, QIntValidator
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import *
+import numpy as np
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+np.warnings.filterwarnings('ignore')
+
 def get_resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+    '''Get absolute path to resource, works for dev and for PyInstaller'''
     try:
         # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
@@ -84,8 +87,7 @@ class GenerateThread(QThread):
             return
 
         self.status_sig.emit('Building...', False)
-        track = self.builder.build(self.length, verbose=False, save=False,
-                                   progress_callback=self.progress_callback)
+        track = self.builder.build(self.length, verbose=False, progress_callback=self.progress_callback)
 
         if track and self.save_fname:
             save_gbx({'track_data': track, 'map_name': self.map_name},
@@ -255,13 +257,11 @@ class Window(QWidget):
 
     @staticmethod
     def get_tm_maps_dir():
-        p = os.path.join(os.path.expanduser(
-            '~'), 'Documents', 'Maniaplanet', 'Maps')
+        p = os.path.join(os.path.expanduser('~'), 'Documents', 'Maniaplanet', 'Maps')
         if os.path.exists(p):
             return p
 
-        p = os.path.join(os.path.expanduser(
-            '~'), 'Documents', 'TrackMania', 'Tracks', 'Challenges')
+        p = os.path.join(os.path.expanduser('~'), 'Documents', 'TrackMania', 'Tracks', 'Challenges')
         if os.path.exists(p):
             return p
 

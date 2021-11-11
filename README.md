@@ -17,7 +17,12 @@ This will generate a track using the provided block and position models that wil
 * keras
 * pygbx (requires installing the [python-lzo wheel](https://www.lfd.uci.edu/~gohlke/pythonlibs/#python-lzo) on Windows)
 * numpy
-* Not required: pygame or Gtk+3 and GLib for track visualization
+* sklearn
+* tensorflow
+
+Additional (not required):
+* pygame or Gtk+3 and GLib for track visualization
+* PyQt5 for the Python GUI `gui.py`
 
 ## Dataset
 This repo doesn't contain the dataset itself used to train the models in the `models/` directory as it is unusual to provide entire datasets with code in one repo. There is however a preprocessed version of the dataset used in the `data/train_data.pkl` file that you can use for futher training.

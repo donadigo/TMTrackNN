@@ -325,13 +325,32 @@ DYNAMIC_GROUND_OFFSETS = {
 START_LINE_BLOCK = STADIUM_BLOCKS['StadiumRoadMainStartLine']
 FINISH_LINE_BLOCK = STADIUM_BLOCKS['StadiumRoadMainFinishLine']
 
-def block_to_tup(block):
+def block_to_tup(block: MapBlock) -> tuple:
+    '''
+    Converts a MapBlock instance to a tuple.
+
+    Args:
+        block (MapBlock): the MapBlock to convert
+
+    Returns:
+        tuple: the converted block
+    '''
     try:
         return (STADIUM_BLOCKS[block.name], block.position.x, block.position.y, block.position.z, block.rotation, block.flags, block.speed)
     except KeyError:
         return None
 
-def block_from_tup(tup):
+
+def block_from_tup(tup: tuple) -> MapBlock:
+    '''
+    Converts a tuple to a MapBlock instance.
+
+    Args:
+        block (tuple): the tuple to convert
+
+    Returns:
+        MapBlock: the converted block
+    '''
     block = MapBlock()
     block.name = get_block_name(tup[BID], STADIUM_BLOCKS)
     block.rotation = tup[BROT]
@@ -340,23 +359,58 @@ def block_from_tup(tup):
         block.flags = 0x1000 if tup[BFLAGS] == 1 else 0
     return block
 
-def one_hot_bid(bid, nclasses):
-    arr = [0] * nclasses
-    if bid != 0:
-        arr[bid - 1] = 1
+
+def one_hot_bid(block_id: int, num_classes: int) -> list:
+    '''
+    One hot encodes a block ID.
+
+    Args:
+        block_id (int): one based block ID
+        num_classes (int): the number of classes
+
+    Returns:
+        list: the encoding
+    '''
+    arr = [0] * num_classes
+    if block_id != 0:
+        arr[block_id - 1] = 1
     return arr
 
-def one_hot_rotation(r):
+
+def one_hot_rotation(rotation: int) -> list:
+    '''
+    One hot encodes a cardinal rotation.
+
+    Args:
+        rotation (int): the cardinal rotation
+
+    Returns:
+        list: the encoding
+    '''
     arr = [0] * 4
-    arr[r] = 1
+    arr[rotation] = 1
     return arr
 
 
-def block_to_vec(block, inp_len, num_classes, scaler, encode_pos=True):
+def block_to_vec(block: tuple, inp_len: int, num_classes: int, scaler: object, encode_pos=True) -> list:
+    '''
+    Converts a block tuple to a complete block encoding,
+    including its position and rotation.
+
+    Args:
+        block (tuple): the block tuple to convert
+        inp_len (int): the input length
+        num_classes (int): the number of block classes
+        scaler (object): the scaler to use to encode position
+        encode_pos (bool): whether to encode the position and rotation
+    
+    Returns:
+        list: the encoded block
+    '''
     if block[0] == 0:
         return [0] * inp_len
 
-    bid_vec = one_hot_bid(block[0], num_classes)
+    bid_vec = one_hot_bid(block[BID], num_classes)
     if encode_pos:
         pos_vec = scaler.transform([block[BX:BZ+1]])[0]
         rot_vec = one_hot_rotation(block[BROT])
@@ -367,13 +421,33 @@ def block_to_vec(block, inp_len, num_classes, scaler, encode_pos=True):
     return bid_vec + list(pos_vec) + rot_vec
 
 
-def pad_block_sequence(seq, maxlen):
+def pad_block_sequence(seq: list, maxlen: int) -> list:
+    '''
+    Left pads a block sequence given a max sequence length.
+
+    Args:
+        seq (list): the block sequence to pad
+        maxlen (int): the maximum length of the resulting sequence
+
+    Returns:
+        list: the resulting sequence
+    '''
     pad = [EMPTY_BLOCK] * (maxlen - len(seq))
     return pad + seq
 
 
-def get_block_name(bid, blocks):
-    for name, _bid in blocks.items():
-        if _bid == bid:
+def get_block_name(block_id: int, blocks: dict) -> str:
+    '''
+    Gets the block name by its ID.
+
+    Args:
+        block_id (int): the block ID
+        blocks (dict): the block mappings
+    
+    Returns:
+        str: the block name
+    '''
+    for name, _block_id in blocks.items():
+        if _block_id == block_id:
             return name
     return None

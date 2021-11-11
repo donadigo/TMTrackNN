@@ -3,10 +3,10 @@ import os
 import pickle
 import json
 from multiprocessing import pool
+from pygbx.headers import CGameCtnGhost
 
 from pygbx.stadium_blocks import STADIUM_BLOCKS
 from pygbx import Gbx, GbxType
-from pygbx.headers import Vector3
 from track_utils import create_pattern_data, fit_data_scaler, occupied_track_positions
 from block_utils import block_to_tup
 
@@ -23,7 +23,16 @@ from block_utils import block_to_tup
 #     ax.scatter(xs, ys, zs)
 #     plt.show()
 
-def get_at_pos(occ, pos):
+
+def get_at_pos(occ: dict, pos: list) -> tuple:
+    '''
+    Queries the (block, positions) dict for the target position
+    and returns the entry that contains it.
+
+    Args:
+        occ (dict): the occupation dictionary
+        pos (list): the position to find
+    '''
     for block, block_offsets in occ.items():
         for off in block_offsets:
             if off == pos:
@@ -31,7 +40,24 @@ def get_at_pos(occ, pos):
     return None, None
 
 
-def process_blocks(blocks, ghost, trace_offset):
+def process_blocks(blocks: list, ghost: CGameCtnGhost, trace_offset: int) -> list:
+    '''
+    Processes blocks from the Gbx file, given the ghost and the trace offset.
+
+    Traces the path the car took, constructing the "correct"
+    sequence of blocks that make out the track. 
+
+    If the car drives on the ground, a special StadiumGrass block is added
+    to the sequence.
+
+    Args:
+        blocks (list): the list of block tuples to process
+        ghost (CGameCtnGhost): the ghost replay to use for tracing
+        trace_offset: the offset to use for tracing
+
+    Returns:
+        list: blocks ordered by the path the car took in the source replay
+    '''
     trace = []
     for record in ghost.records:
         for xoff in [0, -trace_offset, trace_offset]:
@@ -58,7 +84,8 @@ def process_blocks(blocks, ghost, trace_offset):
             trace.pop(0)
             continue
 
-        trace = [p for p in trace if not p in offsets]
+        if offsets:
+            trace = [p for p in trace if not p in offsets]
 
         s.append(block)
         queue.remove(block)
@@ -67,13 +94,21 @@ def process_blocks(blocks, ghost, trace_offset):
     return s
 
 
-def process(replay_gbx, trace_offset):
-    replays = replay_gbx.get_classes_by_ids(
-        [GbxType.REPLAY_RECORD, GbxType.REPLAY_RECORD_OLD])
-    ghosts = replay_gbx.get_classes_by_ids(
-        [GbxType.GAME_GHOST, GbxType.CTN_GHOST])
+def process(replay_gbx: Gbx, trace_offset: int):
+    '''
+    Processes a single replay using a given trace offset.
 
-    if len(ghosts) == 0 or len(replays) == 0:
+    Args:
+        replay_gbx (pygbx.Gbx): the Gbx object to process
+        trace_offset (int): the trace offset to use for tracing out blocks
+
+    Returns:
+        list: the block tuples
+    '''
+    replays = replay_gbx.get_classes_by_ids([GbxType.REPLAY_RECORD, GbxType.REPLAY_RECORD_OLD])
+    ghosts = replay_gbx.get_classes_by_ids([GbxType.GAME_GHOST, GbxType.CTN_GHOST])
+
+    if not ghosts or not replays:
         return None
 
     ghost = ghosts[0]
@@ -94,7 +129,17 @@ def process(replay_gbx, trace_offset):
     return process_blocks(filtered, ghost, trace_offset)
 
 
-def process_fname(fname, trace_offset):
+def process_fname(fname: str, trace_offset: int) -> tuple:
+    '''
+    Processes a single filename given the trace offset
+    
+    Args:
+        fname (str): the filename to the replay file
+        trace_offset (int): the trace offset to use for tracing out blocks
+
+    Returns:
+        tuple: (filename, block_tuples)
+    '''
     print('\tProcessing: \t{}'.format(fname))
     replay_file = Gbx(fname)
     return fname, process(replay_file, trace_offset)
