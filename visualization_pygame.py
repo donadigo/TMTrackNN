@@ -3,6 +3,8 @@ from block_utils import EDITOR_IDS
 import pickle
 import os
 import sys
+from pygbx import Gbx, GbxType
+from track_utils import block_to_tup
 
 IMG_SIZE = 30
 
@@ -21,14 +23,28 @@ def rot_to_angle(rot):
 
 
 if len(sys.argv) <= 1:
-    train_idx = 0
+    track = pickle.load(open('data/train_data.pkl', 'rb+'))[0][1]
+    print('Visualizing first track from the training data.')
 else:
-    train_idx = int(sys.argv[1])
-    
-track = pickle.load(open('data/train_data.pkl', 'rb+'))[train_idx][1]
-print(track)
+    try:
+        train_idx = int(sys.argv[1])
+        track = pickle.load(open('data/train_data.pkl', 'rb+'))[train_idx][1]
+        print(f'Visualizing track {train_idx} from the training data.')
+    except ValueError:
+        gfile = Gbx(sys.argv[1])
+        
+        challenges = gfile.get_classes_by_ids([GbxType.CHALLENGE, GbxType.CHALLENGE_OLD])
+        if challenges:
+            challenge = challenges[0]
+            track = [block_to_tup(block) for block in challenge.blocks]
+            print('Visualizing track from the provided challenge file.')
+        else:
+            print('Cannot load track: invalid file')
+            quit()
 
-arr_img = pygame.image.load('blocks-images/arr.jpg')
+
+print(track)
+arr_img = pygame.image.load('block_images/arr.jpg')
 arr_img = pygame.transform.scale(arr_img, (10, 10))
 
 screen = pygame.display.set_mode((w, h))
@@ -42,12 +58,12 @@ for block in track:
         continue
 
     try:
-        img = pygame.image.load(os.path.join('blocks-images', f))
+        img = pygame.image.load(os.path.join('block_images', f))
         img = pygame.transform.scale(img, (IMG_SIZE, IMG_SIZE))
 
         images.append((img, block[1], block[2], block[3], block[4]))
-    except pygame.error:
-        img = pygame.image.load(os.path.join('blocks-images', 'empty.jpg'))
+    except Exception:
+        img = pygame.image.load(os.path.join('block_images', 'empty.jpg'))
         img = pygame.transform.scale(img, (IMG_SIZE, IMG_SIZE))
 
         images.append((img, block[1], block[2], block[3], block[4]))
@@ -69,8 +85,7 @@ while running:
                              (31 - img[3]) * IMG_SIZE))
 
         arr_img_r = pygame.transform.rotate(arr_img, rot_to_angle(img[4]))
-        screen.blit(
-            arr_img_r, ((31 - img[1]) * IMG_SIZE, (31 - img[3]) * IMG_SIZE))
+        screen.blit(arr_img_r, ((31 - img[1]) * IMG_SIZE, (31 - img[3]) * IMG_SIZE))
 
     if frame % 100 == 0:
         end += 1
