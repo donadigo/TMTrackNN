@@ -1,5 +1,5 @@
 sklearn
-tensorflow==2.7.0
+tensorflow==2.8.0
 keras==2.7.0
 numpy==1.21.3
 pygbx==0.3
