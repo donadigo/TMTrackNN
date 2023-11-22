@@ -59,26 +59,22 @@ def process_blocks(blocks: list, ghost: CGameCtnGhost, trace_offset: int) -> lis
         list: blocks ordered by the path the car took in the source replay
     '''
     trace = []
-    for idx, record in enumerate(ghost.records):
+    finish_index = int(ghost.race_time / 100)
+    for record in ghost.records[:finish_index]:
         for xoff in [0, -trace_offset, trace_offset]:
             for zoff in [0, -trace_offset, trace_offset]:
                 for yoff in [0, -trace_offset]:
                     pos = record.get_block_position(xoff, yoff, zoff)
 
-                    if all(tr[1] != pos for tr in trace):
-                        time = idx * 100
-                        trace.append([time, pos])
+                    if not pos in trace:
+                        trace.append(pos)
 
     occ = occupied_track_positions(blocks)
 
     s = []
     queue = blocks[:]
     while len(trace) > 0:
-        time, pos = trace[0][0], trace[0][1]
-
-        if time >= ghost.race_time:
-            break
-
+        os = trace[0]
         block, offsets = get_at_pos(occ, pos)
 
         if not block:
@@ -90,7 +86,7 @@ def process_blocks(blocks: list, ghost: CGameCtnGhost, trace_offset: int) -> lis
             continue
 
         if offsets:
-            trace = [tr for tr in trace if not tr[1] in offsets]
+            trace = [p for p in trace if not p in offsets]
 
         s.append(block)
         queue.remove(block)
