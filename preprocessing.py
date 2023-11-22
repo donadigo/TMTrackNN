@@ -74,7 +74,7 @@ def process_blocks(blocks: list, ghost: CGameCtnGhost, trace_offset: int) -> lis
     s = []
     queue = blocks[:]
     while len(trace) > 0:
-        os = trace[0]
+        pos = trace[0]
         block, offsets = get_at_pos(occ, pos)
 
         if not block:
