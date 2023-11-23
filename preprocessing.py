@@ -59,7 +59,8 @@ def process_blocks(blocks: list, ghost: CGameCtnGhost, trace_offset: int) -> lis
         list: blocks ordered by the path the car took in the source replay
     '''
     trace = []
-    for record in ghost.records:
+    finish_index = int(ghost.race_time / 100)
+    for record in ghost.records[:finish_index]:
         for xoff in [0, -trace_offset, trace_offset]:
             for zoff in [0, -trace_offset, trace_offset]:
                 for yoff in [0, -trace_offset]:
